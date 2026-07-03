@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: configuration_system
+title: Flutter应用配置与状态管理架构
+scope: []
+source_files:
+    - pubspec.yaml
+    - lib/main.dart
+    - lib/core/providers/providers.dart
+    - lib/core/theme/app_theme.dart
+    - lib/core/constants/app_colors.dart
+    - lib/services/openai_service.dart
+depends_on: []
+related_to: []

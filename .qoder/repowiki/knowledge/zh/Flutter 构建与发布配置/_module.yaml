@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: build_system
+title: Flutter 构建与发布配置
+scope: []
+source_files:
+    - pubspec.yaml
+    - android/build.gradle.kts
+    - android/app/build.gradle.kts
+    - android/settings.gradle.kts
+    - android/gradle/wrapper/gradle-wrapper.properties
+    - analysis_options.yaml
+depends_on: []
+related_to: []

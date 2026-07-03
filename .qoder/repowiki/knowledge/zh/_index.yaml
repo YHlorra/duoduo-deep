@@ -1,0 +1,125 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: Q0DeR-MaG1C-BrAnCh-Fo2-NoN-GiT-Or-No-C0MmIt
+nodes_managed: true
+exported_at: "2026-06-25T09:11:18Z"
+modules:
+    "":
+        dir_name: DIY多邻国风格学习应用
+        title: DIY多邻国风格学习应用
+        scope:
+            - README.md
+            - pubspec.yaml
+            - analysis_options.yaml
+            - .gitignore
+            - pubspec.lock
+            - test/
+            - .flutter-plugins-dependencies
+            - .metadata
+            - dlg_q.iml
+        source_files: []
+        children:
+            - app_core
+            - app_features
+            - platform_android
+        depends_on: []
+        related_to: []
+    app_core:
+        dir_name: 核心架构与数据服务
+        title: 核心架构与数据服务
+        scope:
+            - lib/core/
+            - lib/data/
+            - lib/services/
+            - lib/shared/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: app_features
+    app_features:
+        dir_name: 核心功能与交互界面
+        title: 核心功能与交互界面
+        scope:
+            - lib/features/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: app_core
+    build_system:
+        dir_name: Flutter 构建与发布配置
+        title: Flutter 构建与发布配置
+        scope: []
+        source_files:
+            - pubspec.yaml
+            - android/build.gradle.kts
+            - android/app/build.gradle.kts
+            - android/settings.gradle.kts
+            - android/gradle/wrapper/gradle-wrapper.properties
+            - analysis_options.yaml
+        children: []
+        depends_on: []
+        related_to: []
+    configuration_system:
+        dir_name: Flutter应用配置与状态管理架构
+        title: Flutter应用配置与状态管理架构
+        scope: []
+        source_files:
+            - pubspec.yaml
+            - lib/main.dart
+            - lib/core/providers/providers.dart
+            - lib/core/theme/app_theme.dart
+            - lib/core/constants/app_colors.dart
+            - lib/services/openai_service.dart
+        children: []
+        depends_on: []
+        related_to: []
+    dependency_management:
+        dir_name: Flutter 与 Gradle 依赖管理体系
+        title: Flutter 与 Gradle 依赖管理体系
+        scope: []
+        source_files:
+            - pubspec.yaml
+            - pubspec.lock
+            - android/build.gradle.kts
+            - android/app/build.gradle.kts
+        children: []
+        depends_on: []
+        related_to: []
+    error_handling:
+        dir_name: 错误处理机制
+        title: 错误处理机制
+        scope: []
+        source_files:
+            - lib/services/openai_service.dart
+            - lib/services/content_analyzer.dart
+            - lib/core/providers/providers.dart
+            - lib/features/ingestion/ingestion_screen.dart
+            - lib/data/database/database_helper.dart
+        children: []
+        depends_on: []
+        related_to: []
+    frontend_style:
+        dir_name: 多邻国风格前端视觉体系
+        title: 多邻国风格前端视觉体系
+        scope: []
+        source_files:
+            - lib/core/constants/app_colors.dart
+            - lib/core/theme/app_theme.dart
+            - lib/shared/widgets/duo_button.dart
+            - lib/shared/widgets/stats_widgets.dart
+            - pubspec.yaml
+        children: []
+        depends_on: []
+        related_to: []
+    platform_android:
+        dir_name: Android 平台宿主与构建配置
+        title: Android 平台宿主与构建配置
+        scope:
+            - android/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

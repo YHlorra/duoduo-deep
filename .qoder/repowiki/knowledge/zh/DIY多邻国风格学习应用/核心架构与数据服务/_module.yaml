@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: app_core
+title: 核心架构与数据服务
+scope:
+    - lib/core/
+    - lib/data/
+    - lib/services/
+    - lib/shared/
+source_files: []
+depends_on: []
+related_to:
+    - path: app_features

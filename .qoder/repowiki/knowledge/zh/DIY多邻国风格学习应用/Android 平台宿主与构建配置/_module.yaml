@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: platform_android
+title: Android 平台宿主与构建配置
+scope:
+    - android/
+source_files: []
+depends_on: []
+related_to: []
