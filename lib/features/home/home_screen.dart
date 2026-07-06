@@ -24,6 +24,8 @@ class HomeScreen extends ConsumerWidget {
           children: [
             // 顶部栏：模式切换 + 统计
             _buildTopBar(context, ref, statsAsync, mode),
+            // 每日目标进度条
+            _buildDailyGoalBar(statsAsync),
             // 内容区
             Expanded(
               child: mode == LearningMode.random
@@ -100,32 +102,87 @@ class HomeScreen extends ConsumerWidget {
           const Spacer(),
           // 统计
           statsAsync.when(
-            data: (stats) => Row(
-              children: [
-                _StatChip(
-                  icon: Icons.local_fire_department,
-                  iconColor: AppColors.streakOrange,
-                  value: stats.streak.toString(),
-                ),
-                const SizedBox(width: 12),
-                _StatChip(
-                  icon: Icons.diamond,
-                  iconColor: AppColors.blue,
-                  value: stats.xp.toString(),
-                ),
-                const SizedBox(width: 12),
-                _StatChip(
-                  icon: Icons.favorite,
-                  iconColor: AppColors.heartRed,
-                  value: '${stats.hearts}/${stats.maxHearts}',
-                ),
-              ],
-            ),
+            data: (stats) {
+              final heartColor = stats.hearts <= 0
+                  ? AppColors.red
+                  : (stats.hearts <= 1 ? AppColors.streakOrange : AppColors.heartRed);
+              return Row(
+                children: [
+                  _StatChip(
+                    icon: Icons.local_fire_department,
+                    iconColor: AppColors.streakOrange,
+                    value: stats.streak.toString(),
+                  ),
+                  const SizedBox(width: 12),
+                  _StatChip(
+                    icon: Icons.diamond,
+                    iconColor: AppColors.blue,
+                    value: stats.xp.toString(),
+                  ),
+                  const SizedBox(width: 12),
+                  _StatChip(
+                    icon: stats.hearts <= 1 ? Icons.favorite : Icons.favorite,
+                    iconColor: heartColor,
+                    value: '${stats.hearts}/${stats.maxHearts}',
+                  ),
+                ],
+              );
+            },
             loading: () => const SizedBox(height: 24),
             error: (_, __) => const SizedBox(height: 24),
           ),
         ],
       ),
+    );
+  }
+
+  /// 每日目标进度条
+  Widget _buildDailyGoalBar(AsyncValue<UserStats> statsAsync) {
+    return statsAsync.when(
+      data: (stats) {
+        final progress = (stats.todayXp / stats.dailyGoal).clamp(0.0, 1.0);
+        final isComplete = stats.todayXp >= stats.dailyGoal;
+        if (isComplete) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: [
+              const Icon(Icons.flag, size: 16, color: AppColors.gold),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.gold,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${stats.todayXp}/${stats.dailyGoal}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 

@@ -55,7 +55,7 @@ class DIYDuolingoApp extends StatelessWidget {
     };
 
     return MaterialApp(
-      title: 'DIY 多邻国',
+      title: '多多学',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const MainApp(),

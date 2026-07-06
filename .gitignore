@@ -1,4 +1,4 @@
-# Miscellaneous
+# ============ Miscellaneous ============
 *.class
 *.log
 *.pyc
@@ -12,34 +12,66 @@
 .swiftpm/
 migrate_working_dir/
 
-# IntelliJ related
+# ============ IDE / Editor ============
+# IntelliJ / Android Studio
 *.iml
 *.ipr
 *.iws
 .idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
+# VS Code (uncomment if you don't want to commit launch config)
 #.vscode/
 
-# Flutter/Dart/Pub related
+# ============ Flutter / Dart / Pub ============
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
 
-# Symbolication related
+# ============ Symbolication & Obfuscation ============
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# ============ Android ============
+# Build artifacts
 /android/app/debug
 /android/app/profile
 /android/app/release
+# Local configuration (contains SDK paths, should not be committed)
+/android/local.properties
+# Keystore files (signing credentials, never commit)
+*.keystore
+*.jks
+key.properties
+
+# ============ iOS ============
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# ============ Environment & Secrets ============
+.env
+.env.local
+.env.*.local
+*.env
+
+# ============ Generated files ============
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# ============ OS files ============
+Thumbs.db

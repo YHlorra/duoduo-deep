@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../data/models/question.dart';
 import '../../data/models/question_type.dart';
+import '../../data/models/user_stats.dart';
 import '../../shared/widgets/duo_button.dart';
 import '../../shared/widgets/stats_widgets.dart';
 import 'widgets/question_widgets.dart';
@@ -27,6 +28,9 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
   bool _isLoading = true;
   int _correctCount = 0;
   bool _isComplete = false;
+  bool _outOfHearts = false;
+  bool _heartRestored = false;
+  int _xpGained = 0;
 
   @override
   void initState() {
@@ -55,21 +59,37 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     });
   }
 
-  void _checkAnswer() {
+  Future<void> _checkAnswer() async {
     if (_selectedAnswer == null) return;
 
     final question = _questions[_currentIndex];
     final isCorrect = _checkCorrect(question, _selectedAnswer!);
 
+    // 记录每日打卡
+    final gameService = ref.read(gamificationServiceProvider);
+    await gameService.recordCheckIn();
+
+    if (isCorrect) {
+      _correctCount++;
+      _xpGained += 10;
+      await ref.read(userStatsProvider.notifier).onCorrect();
+      await gameService.incrementTotalCorrect();
+    } else {
+      await ref.read(userStatsProvider.notifier).onWrong();
+    }
+
     setState(() {
       _showResult = true;
-      if (isCorrect) {
-        _correctCount++;
-        ref.read(userStatsProvider.notifier).onCorrect();
-      } else {
-        ref.read(userStatsProvider.notifier).onWrong();
-      }
     });
+
+    // 心数耗尽时，延迟1.5秒后跳转到“心数用完”页面
+    if (!isCorrect) {
+      final stats = ref.read(userStatsProvider).value;
+      if (stats != null && stats.hearts <= 0) {
+        await Future.delayed(const Duration(milliseconds: 1500));
+        setState(() => _outOfHearts = true);
+      }
+    }
   }
 
   bool _checkCorrect(Question question, String answer) {
@@ -104,7 +124,22 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
 
   Future<void> _finishQuiz() async {
     final allCorrect = _correctCount == _questions.length;
+    final statsBefore = ref.read(userStatsProvider).value;
     await ref.read(userStatsProvider.notifier).onDeckComplete(allCorrect: allCorrect);
+    final statsAfter = ref.read(userStatsProvider).value;
+
+    // 计算总 XP（含连续天数奖励）
+    final bonus = allCorrect ? 100 : 50;
+    final streakBonus = (statsAfter?.streak ?? 0) * 5;
+    _xpGained += bonus + streakBonus;
+
+    // 完美完成恢复一颗心
+    if (allCorrect) {
+      await ref.read(userStatsProvider.notifier).onPerfectQuiz();
+      await ref.read(gamificationServiceProvider).incrementPerfectCount();
+      _heartRestored = true;
+    }
+
     // 仅知识点模式（有 deckId）才保存学习记录
     if (widget.deckId != null) {
       await ref.read(deckOperationsProvider).saveStudyRecord(
@@ -114,6 +149,66 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
           );
     }
     setState(() => _isComplete = true);
+
+    // 检查新解锁的成就
+    if (statsBefore != null && statsAfter != null) {
+      _checkAchievements(statsBefore, statsAfter);
+    }
+  }
+
+  void _checkAchievements(UserStats before, UserStats after) {
+    final newAchievements = <String>[];
+    // 连续天数
+    if (before.streak < 3 && after.streak >= 3) newAchievements.add('连续3天');
+    if (before.streak < 7 && after.streak >= 7) newAchievements.add('连续7天');
+    if (before.streak < 30 && after.streak >= 30) newAchievements.add('连续30天');
+    if (before.streak < 100 && after.streak >= 100) newAchievements.add('连续100天');
+    // XP
+    if (before.xp < 100 && after.xp >= 100) newAchievements.add('初心者');
+    if (before.xp < 500 && after.xp >= 500) newAchievements.add('积少成多');
+    if (before.xp < 1000 && after.xp >= 1000) newAchievements.add('知识富翁');
+    if (before.xp < 2000 && after.xp >= 2000) newAchievements.add('勤学者');
+    if (before.xp < 5000 && after.xp >= 5000) newAchievements.add('学霸');
+    if (newAchievements.isNotEmpty && mounted) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.emoji_events, size: 64, color: AppColors.gold),
+                const SizedBox(height: 12),
+                const Text(
+                  '成就解锁！',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.gold),
+                ),
+                const SizedBox(height: 16),
+                ...newAchievements.map((a) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.star, color: AppColors.gold, size: 20),
+                      const SizedBox(width: 6),
+                      Text(a, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                )),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('太棒了', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+      });
+    }
   }
 
   @override
@@ -129,6 +224,10 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
         appBar: AppBar(title: const Text('答题')),
         body: const Center(child: Text('此题包暂无题目')),
       );
+    }
+
+    if (_outOfHearts) {
+      return _buildOutOfHeartsScreen();
     }
 
     if (_isComplete) {
@@ -298,7 +397,24 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                       color: isCorrect ? AppColors.greenDark : AppColors.redDark,
                     ),
                   ),
-                  if (!isCorrect) ...[
+                  if (isCorrect)
+                    Text(
+                      '+10 XP',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.gold,
+                      ),
+                    )
+                  else ...[
+                    const Text(
+                      '-1 ❤',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.heartRed,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       '正确答案: ${_questions[_currentIndex].answer}',
@@ -327,9 +443,88 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     );
   }
 
+  Widget _buildOutOfHeartsScreen() {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 120,
+                height: 120,
+                decoration: const BoxDecoration(
+                  color: AppColors.heartRed,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.favorite_border,
+                  size: 60,
+                  color: Colors.white,
+                ),
+              ).animate().scale(duration: 500.ms),
+              const SizedBox(height: 24),
+              const Text(
+                '心数用完了！',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.heartRed,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '答对 $_correctCount / ${_questions.length} 题',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.greenLight,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.lightbulb, color: AppColors.green, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '完美完成一个单元可恢复1颗心',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.greenDark,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              DuoButton(
+                label: '返回',
+                color: AppColors.blue,
+                width: double.infinity,
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildResultScreen() {
     final accuracy = _questions.isNotEmpty ? _correctCount / _questions.length : 0.0;
     final allCorrect = _correctCount == _questions.length;
+    final stats = ref.watch(userStatsProvider).value;
+    final streakBonus = (stats?.streak ?? 0) * 5;
 
     return Scaffold(
       body: SafeArea(
@@ -370,15 +565,61 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              // XP 明细
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    _xpRow('答对题数', '+${_correctCount * 10} XP'),
+                    _xpRow('完成奖励', '+${allCorrect ? 100 : 50} XP'),
+                    if (streakBonus > 0)
+                      _xpRow('连续${stats?.streak ?? 0}天奖励', '+$streakBonus XP'),
+                    const Divider(height: 16),
+                    _xpRow('总计', '$_xpGained XP', isBold: true),
+                  ],
+                ),
+              ),
+              if (_heartRestored) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.heartRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.favorite, color: AppColors.heartRed, size: 20),
+                      SizedBox(width: 6),
+                      Text(
+                        '完美通关，恢复1颗心！',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.heartRed,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
               // 统计卡片
               Row(
                 children: [
                   _ResultCard(
                     icon: Icons.star,
                     color: AppColors.gold,
-                    label: 'XP',
-                    value: '+${_correctCount * 10 + (allCorrect ? 100 : 50)}',
+                    label: '总 XP',
+                    value: '+$_xpGained',
                   ),
                   const SizedBox(width: 12),
                   _ResultCard(
@@ -399,6 +640,33 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _xpRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: isBold ? FontWeight.w800 : FontWeight.w500,
+              color: isBold ? AppColors.textPrimary : AppColors.textSecondary,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
+              color: isBold ? AppColors.green : AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }

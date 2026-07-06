@@ -71,6 +71,12 @@ class UserStatsNotifier extends StateNotifier<AsyncValue<UserStats>> {
     state = AsyncValue.data(stats);
   }
 
+  /// 完美完成答题，恢复一颗心
+  Future<void> onPerfectQuiz() async {
+    final stats = await _service.onPerfectQuiz();
+    state = AsyncValue.data(stats);
+  }
+
   Future<void> setDailyGoal(int goal) async {
     await _service.setDailyGoal(goal);
     await _load();
@@ -239,4 +245,28 @@ class RandomLevelNotifier extends StateNotifier<int> {
 final allQuestionsProvider = FutureProvider<List<Question>>((ref) async {
   final db = ref.read(databaseProvider);
   return db.getAllQuestions();
+});
+
+// ============ 月度打卡 & 答题统计 ============
+
+/// 当月打卡日期列表（key 格式: "2026_6"）
+final monthlyCheckInProvider = FutureProvider.family<List<String>, String>((ref, yearMonth) async {
+  final parts = yearMonth.split('_');
+  return ref.read(gamificationServiceProvider)
+      .getMonthlyCheckInDates(int.parse(parts[0]), int.parse(parts[1]));
+});
+
+/// 已获得的月度勋章
+final earnedMedalsProvider = FutureProvider<List<({int year, int month})>>((ref) async {
+  return ref.read(gamificationServiceProvider).getEarnedMedals();
+});
+
+/// 总答对题数
+final totalCorrectProvider = FutureProvider<int>((ref) async {
+  return ref.read(gamificationServiceProvider).getTotalCorrect();
+});
+
+/// 完美通关次数
+final perfectCountProvider = FutureProvider<int>((ref) async {
+  return ref.read(gamificationServiceProvider).getPerfectCount();
 });
