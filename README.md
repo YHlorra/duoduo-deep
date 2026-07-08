@@ -84,6 +84,8 @@ AI 拆题输入 + 解析预览
 
 前往 [Releases](https://github.com/YHlorra/duoduo-deep/releases) 下载最新 APK。Release key 签名，sideload 安装到 Android 设备即可。
 
+最新版 [v0.1.1](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.1)（57MB，39/39 tests ✅）。
+
 ---
 
 ## 📄 License
