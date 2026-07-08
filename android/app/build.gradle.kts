@@ -45,7 +45,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystoreProperties.isNotEmpty) {
+            signingConfig = if (keystoreProperties.isNotEmpty()) {
                 signingConfigs.getByName("release")
             } else {
                 // 没有 key.properties 时回退到 debug 签名，方便本地 flutter run --release 调试
