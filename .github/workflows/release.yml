@@ -45,6 +45,30 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set. See android/key.properties.example for setup."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          ls -l android/app/release.keystore
+
+      - name: Write key.properties
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cat > android/key.properties <<EOF
+          storeFile=release.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
       - name: Build release APK
         id: build
         run: |
@@ -74,5 +98,5 @@ jobs:
 
             ## 注意事项
 
-            - 本 APK 使用 **debug key 签名**，仅供 sideload 装设备测试，请勿用于 Google Play Store 上架。
-            - 上架 Play Store 需要在 `android/key.properties` 配置正式 keystore，并在 workflow 中注入对应 GitHub Actions secret。
+            - 本 APK 使用项目维护者持有的 **release key 签名**，可 sideload 装设备使用。
+            - 上架 Google Play Store 时，需用 Play Console 接受的签名密钥重新签名（见 Play App Signing 流程）。

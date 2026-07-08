@@ -1,0 +1,15 @@
+# Release signing config — DO NOT commit your real key.properties
+#
+# 1. Generate keystore (one-time, locally):
+#    keytool -genkey -v -keystore android/app/release.keystore \
+#      -alias duoduo-deep -keyalg RSA -keysize 2048 -validity 10000
+#
+# 2. Copy this file to android/key.properties and fill in the values
+#
+# 3. For CI: see .github/workflows/release.yml + the 4 GitHub secrets:
+#      KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+
+storeFile=release.keystore
+storePassword=YOUR_STORE_PASSWORD
+keyAlias=duoduo-deep
+keyPassword=YOUR_KEY_PASSWORD

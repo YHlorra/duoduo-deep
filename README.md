@@ -145,7 +145,7 @@ test/
 
 > [!WARNING]
 > 本 fork **不会** 上传你的 API Key 到任何服务器，所有配置仅存本机 SharedPreferences。
-> 但 Release APK 为 **debug 签名**，请勿用于 Google Play Store 上架。
+> Release APK 已使用维护者持有的 release key 签名；如要上架 Google Play Store，请走 [Play App Signing](https://support.google.com/googleplay/android-developer/answer/9842756) 流程，用 Play 接受的签名密钥重新签名。
 
 ---
 
@@ -162,7 +162,7 @@ test/
 
 - 需要跨设备同步（本地存储，不上云）
 - 想要开箱即用的现成题库（这里没有，要自己喂内容）
-- 上架 Play Store（debug 签名）
+- 上架 Play Store（需走 Play App Signing 重新签名）
 
 ---
 
@@ -171,7 +171,7 @@ test/
 > [!CAUTION]
 > - API Key **仅存本机**（SharedPreferences），不会上传任何服务器
 > - 你选择的 provider 服务器会看到你发送的学习内容，注意隐私
-> - Release APK 使用 debug key 签名，请勿从非官方渠道下载
+> - Release APK 使用维护者持有的 release key 签名，请勿从非官方渠道下载
 
 ---
 
@@ -181,7 +181,44 @@ test/
 
 | 版本 | 触发 | APK | CI |
 |---|---|---|---|
-| [v0.1.0](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.0) | `git tag v0.1.0 && git push --tags` | 55M (debug 签名) | ✅ 39/39 tests |
+| [v0.1.0](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.0) | `git tag v0.1.0 && git push --tags` | 55M (debug 签名，初版) | ✅ 39/39 tests |
+| v0.1.1+ | 维护者配置 release keystore 后 | release 签名 | ✅ |
+
+---
+
+## 🔐 Release 签名（维护者）
+
+Release APK 由 GitHub Actions 在 tag 触发时自动构建并使用维护者持有的 release key 签名。架构：
+
+- **本地**：`android/key.properties`（gitignored）+ `android/app/release.keystore`（gitignored）
+- **CI**：4 个 GitHub Actions secret —— `KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`
+- **workflow**：`.github/workflows/release.yml` 在 `flutter build apk --release` 之前从 secret 解码 keystore + 生成 `key.properties`
+
+首次配置（一次性，维护者本地执行）：
+
+```powershell
+# 1. 生成 keystore（按提示输入密码和身份信息）
+keytool -genkey -v -keystore android/app/release.keystore `
+  -alias duoduo-deep -keyalg RSA -keysize 2048 -validity 10000
+
+# 2. 复制模板并填入密码
+Copy-Item android/key.properties.example android/key.properties
+# 编辑 key.properties 填入 storePassword 和 keyPassword
+
+# 3. 把 keystore + 3 个密码设为 GitHub Actions secret
+$base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("android/app/release.keystore"))
+gh secret set KEYSTORE_BASE64 --repo YHlorra/duoduo-deep --body $base64
+gh secret set KEYSTORE_PASSWORD --repo YHlorra/duoduo-deep   # 输入密码
+gh secret set KEY_ALIAS --repo YHlorra/duoduo-deep --body "duoduo-deep"
+gh secret set KEY_PASSWORD --repo YHlorra/duoduo-deep   # 输入密码（同 storePassword 也可以）
+
+# 4. 重新打 tag 触发 release
+git tag -d v0.1.0; git push origin-new :refs/tags/v0.1.0   # 删旧 tag
+git tag -a v0.1.1 -m "v0.1.1 - release-signed APK"; git push origin-new v0.1.1
+```
+
+> [!NOTE]
+> 上架 Google Play Store 时还需走 [Play App Signing](https://support.google.com/googleplay/android-developer/answer/9842756) 流程用 Play 接受的密钥重新签名；本仓库的 release key 仅用于 sideload 装设备。
 
 ---
 
