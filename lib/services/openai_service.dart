@@ -1,6 +1,19 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'output_constraint.dart';
+import 'json_extractor.dart';
+import '../data/models/schemas/deck_schema.dart';
+
+/// Extracts the message content from an API response.
+String _extractContent(Response response) {
+  final data = response.data as Map<String, dynamic>;
+  final choices = data['choices'] as List;
+  if (choices.isEmpty) {
+    throw Exception('API 返回空结果');
+  }
+  return choices[0]['message']['content'] as String;
+}
 
 /// AI 厂商预设
 class AIProviderPreset {
@@ -90,6 +103,20 @@ class AIProviders {
   }
 }
 
+/// 工具调用结果
+class ToolCallResult {
+  final String name;
+  final Map<String, dynamic> arguments;
+  ToolCallResult(this.name, this.arguments);
+}
+
+/// 带 tool call 的对话结果
+class ChatResult {
+  final String? content;
+  final List<ToolCallResult> toolCalls;
+  ChatResult({this.content, this.toolCalls = const []});
+}
+
 /// AI 服务（兼容 OpenAI 接口格式）
 class OpenAIService {
   static const String _apiKeyKey = 'ai_api_key';
@@ -171,6 +198,8 @@ class OpenAIService {
     required String userContent,
     String? imageBase64,
     double? temperature,
+    OutputConstraintLevel? outputConstraint,
+    Map<String, dynamic>? schema,
   }) async {
     final apiKey = await getApiKey();
     if (apiKey == null || apiKey.isEmpty) {
@@ -199,37 +228,218 @@ class OpenAIService {
       messages.add({'role': 'user', 'content': userContent});
     }
 
-    final response = await _dio.post(
-      '$baseUrl/chat/completions',
-      options: Options(
-        headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
+    final body = <String, dynamic>{
+      'model': model,
+      'messages': messages,
+      'temperature': temperature ?? 0.7,
+      'max_tokens': 4096,
+    };
+
+    if (outputConstraint == OutputConstraintLevel.level3Strict && schema != null) {
+      body['response_format'] = {
+        'type': 'json_schema',
+        'json_schema': {
+          'name': 'output',
+          'strict': true,
+          'schema': schema,
         },
-      ),
-      data: jsonEncode({
-        'model': model,
-        'messages': messages,
-        'temperature': temperature ?? 0.7,
-        'max_tokens': 4096,
-      }),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('API 请求失败: ${response.statusCode}');
+      };
+    } else if (outputConstraint == OutputConstraintLevel.level2Json) {
+      body['response_format'] = {'type': 'json_object'};
     }
 
-    final data = response.data as Map<String, dynamic>;
-    final choices = data['choices'] as List;
-    if (choices.isEmpty) {
-      throw Exception('API 返回空结果');
+    try {
+      final response = await _dio.post(
+        '$baseUrl/chat/completions',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+        ),
+        data: jsonEncode(body),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('API 请求失败: ${response.statusCode}');
+      }
+
+      return _extractContent(response);
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      final errorMsg = e.response?.data?.toString() ?? e.message ?? '';
+      if ((status == 400 || status == 422) &&
+          errorMsg.contains('response_format')) {
+        // Graceful degradation: retry without response_format
+        body.remove('response_format');
+        final retry = await _dio.post(
+          '$baseUrl/chat/completions',
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+            },
+          ),
+          data: jsonEncode(body),
+        );
+        if (retry.statusCode != 200) {
+          throw Exception('API 请求失败: ${retry.statusCode}');
+        }
+        // Cache the degradation so future calls skip L3 immediately
+        ProviderCapability.forceLevel(OutputConstraintLevel.level1Prompt);
+        return _extractContent(retry);
+      }
+      rethrow;
+    }
+  }
+
+  /// 带 tool call 的对话（支持多轮工具调用）
+  ///
+  /// 循环执行：调用 API → 解析 tool_calls → 执行工具 → 追加结果 → 再次调用
+  /// 直到无 tool_calls 或达到 maxToolCalls 上限。
+  /// 若 API 返回工具不支持错误，自动降级到普通 chatCompletion。
+  Future<String> chatCompletionWithTools({
+    required String systemPrompt,
+    required String userContent,
+    required List<Map<String, dynamic>> toolDefinitions,
+    required Future<String> Function(String toolName, Map<String, dynamic> args) executeTool,
+    double? temperature,
+    int maxToolCalls = 5,
+    OutputConstraintLevel? outputConstraint,
+    Map<String, dynamic>? schema,
+  }) async {
+    final apiKey = await getApiKey();
+    if (apiKey == null || apiKey.isEmpty) {
+      throw Exception('未设置 API Key，请先在设置中配置');
     }
 
-    return choices[0]['message']['content'] as String;
+    final model = await getModel();
+    final baseUrl = await getBaseUrl();
+
+    final messages = <Map<String, dynamic>>[
+      {'role': 'system', 'content': systemPrompt},
+      {'role': 'user', 'content': userContent},
+    ];
+
+    String? finalContent = '';
+
+    for (var round = 0; round <= maxToolCalls; round++) {
+      try {
+        final response = await _dio.post(
+          '$baseUrl/chat/completions',
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+            },
+          ),
+          data: jsonEncode({
+            'model': model,
+            'messages': messages,
+            'temperature': temperature ?? 0.7,
+            'max_tokens': 4096,
+            'tools': toolDefinitions.map((t) => {
+              'type': 'function',
+              'function': t,
+            }).toList(),
+          }),
+        );
+
+        if (response.statusCode != 200) {
+          throw Exception('API 请求失败: ${response.statusCode}');
+        }
+
+        final data = response.data as Map<String, dynamic>;
+        final choices = data['choices'] as List;
+        if (choices.isEmpty) {
+          throw Exception('API 返回空结果');
+        }
+
+        final message = choices[0]['message'] as Map<String, dynamic>;
+        final content = message['content'] as String?;
+        final toolCallsRaw = message['tool_calls'] as List?;
+
+        if (content != null) {
+          finalContent = content;
+        }
+
+        if (toolCallsRaw == null || toolCallsRaw.isEmpty) {
+          // 无工具调用，返回最终内容
+          return _reformatWithConstraint(finalContent ?? '', outputConstraint, schema);
+        }
+
+        // 追加 assistant 消息（含 tool_calls）
+        messages.add(Map<String, dynamic>.from(message));
+
+        // 执行每个工具调用
+        for (final tc in toolCallsRaw) {
+          final tcMap = tc as Map<String, dynamic>;
+          final id = tcMap['id'] as String;
+          final function = tcMap['function'] as Map<String, dynamic>;
+          final name = function['name'] as String;
+          final argsRaw = function['arguments'] as String;
+
+          Map<String, dynamic> args;
+          try {
+            args = jsonDecode(argsRaw) as Map<String, dynamic>;
+          } on FormatException {
+            args = {'raw': argsRaw};
+          }
+
+          final result = await executeTool(name, args);
+
+          messages.add({
+            'role': 'tool',
+            'tool_call_id': id,
+            'name': name,
+            'content': result,
+          });
+        }
+      } on DioException catch (e) {
+        // 若 API 不支持 tools 参数，降级到普通对话
+        final errorMsg = e.response?.data?.toString() ?? e.message ?? '';
+        if (errorMsg.contains('tools') || errorMsg.contains('tool')) {
+          return await chatCompletion(
+            systemPrompt: systemPrompt,
+            userContent: userContent,
+            temperature: temperature,
+            outputConstraint: outputConstraint,
+            schema: schema,
+          );
+        }
+        rethrow;
+      }
+    }
+
+    return _reformatWithConstraint(finalContent ?? '', outputConstraint, schema);
+  }
+
+  /// Reformat content according to the output constraint level.
+  Future<String> _reformatWithConstraint(
+    String content,
+    OutputConstraintLevel? outputConstraint,
+    Map<String, dynamic>? schema,
+  ) async {
+    if (outputConstraint == OutputConstraintLevel.level3Strict && schema != null) {
+      return await chatCompletion(
+        systemPrompt: 'Reformat the following as valid JSON matching the schema. Output ONLY JSON, no explanation.',
+        userContent: content,
+        outputConstraint: outputConstraint,
+        schema: schema,
+      );
+    }
+    if (outputConstraint == OutputConstraintLevel.level2Json) {
+      return await chatCompletion(
+        systemPrompt: 'Reformat the following as valid JSON. Output ONLY JSON.',
+        userContent: content,
+        outputConstraint: outputConstraint,
+      );
+    }
+    return content;
   }
 
   /// AI 判断填空题答案是否正确
-  /// 
+  ///
   /// 当用户答案与标准答案不完全匹配时，调用大模型判断语义是否等价。
   /// 返回 true 表示正确，false 表示错误。
   Future<bool> judgeFillBlankAnswer({
@@ -237,7 +447,7 @@ class OpenAIService {
     required String userAnswer,
     required String correctAnswer,
   }) async {
-    final systemPrompt = '你是一个判题助手。你的任务是判断用户的填空题答案是否与标准答案在语义上等价。'
+    const systemPrompt = '你是一个判题助手。你的任务是判断用户的填空题答案是否与标准答案在语义上等价。'
         '允许的情况包括但不限于：同义词、近义词、不同的表述方式、大小写差异、标点差异、简称与全称。'
         '你只需要回答 JSON 格式：{"correct": true} 或 {"correct": false}，不要输出其他内容。';
 
@@ -251,18 +461,15 @@ class OpenAIService {
         systemPrompt: systemPrompt,
         userContent: userContent,
         temperature: 0.0,
+        outputConstraint: OutputConstraintLevel.level3Strict,
+        schema: fillBlankJudgeSchema,
       );
 
-      // 解析 JSON 结果
-      final cleaned = result.trim();
-      // 尝试提取 JSON
-      final jsonMatch = RegExp(r'\{[^}]*\}').firstMatch(cleaned);
-      if (jsonMatch != null) {
-        final json = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
-        return json['correct'] == true;
+      final parsed = JsonExtractor.parse(result);
+      if (parsed != null) {
+        return parsed['correct'] == true;
       }
-      // 如果不是 JSON，尝试直接匹配 true/false
-      return cleaned.toLowerCase().contains('true');
+      return false;
     } catch (e) {
       // AI 判题失败时，回退到不通过
       return false;

@@ -12,6 +12,8 @@ class Question {
   // 匹配题专用: 左右两列
   final List<String>? matchLeft;
   final List<String>? matchRight;
+  final String? difficulty; // 'easy' | 'medium' | 'hard'
+  final String? cognitiveLevel; // 'knowledge' | 'skill'
 
   Question({
     required this.id,
@@ -23,6 +25,8 @@ class Question {
     this.explanation,
     this.matchLeft,
     this.matchRight,
+    this.difficulty,
+    this.cognitiveLevel,
   });
 
   Map<String, dynamic> toMap() {
@@ -36,6 +40,8 @@ class Question {
       'explanation': explanation,
       'match_left': matchLeft?.join('\x00'),
       'match_right': matchRight?.join('\x00'),
+      'difficulty': difficulty,
+      'cognitive_level': cognitiveLevel,
     };
   }
 
@@ -50,6 +56,8 @@ class Question {
       explanation: map['explanation'] as String?,
       matchLeft: (map['match_left'] as String?)?.split('\x00').where((s) => s.isNotEmpty).toList(),
       matchRight: (map['match_right'] as String?)?.split('\x00').where((s) => s.isNotEmpty).toList(),
+      difficulty: map['difficulty'] as String?,
+      cognitiveLevel: map['cognitive_level'] as String?,
     );
   }
 
@@ -70,6 +78,8 @@ class Question {
       explanation: json['explanation'] as String?,
       matchLeft: matchLeft,
       matchRight: matchRight,
+      difficulty: json['difficulty'] as String?,
+      cognitiveLevel: json['cognitive_level'] as String?,
     );
   }
 }

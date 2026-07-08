@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../shared/widgets/duo_button.dart';
+import '../deep/goal_collection_screen.dart';
+import '../deep/pipeline_progress_screen.dart';
 import 'deck_preview_screen.dart';
 
 class IngestionScreen extends ConsumerStatefulWidget {
@@ -25,11 +27,13 @@ class IngestionScreen extends ConsumerStatefulWidget {
 
 class _IngestionScreenState extends ConsumerState<IngestionScreen> {
   final _textController = TextEditingController();
+  final _urlController = TextEditingController();
   String? _imagePath;
   String? _imageBase64;
   bool _isAnalyzing = false;
   String _statusText = '';
   String? _errorMessage;
+  bool _deepMode = false;
 
   @override
   void initState() {
@@ -67,8 +71,30 @@ class _IngestionScreenState extends ConsumerState<IngestionScreen> {
 
   Future<void> _analyze() async {
     final text = _textController.text.trim();
-    if (text.isEmpty && _imageBase64 == null) {
-      setState(() => _errorMessage = '请输入或粘贴内容');
+    final url = _urlController.text.trim();
+
+  if (_deepMode) {
+    // Deep mode → navigate to GoalCollectionScreen
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => GoalCollectionScreen(
+            initialUrl: url.isNotEmpty ? url : null,
+            onStart: (goal) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => PipelineProgressScreen(goal: goal),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Quick mode: existing behavior (unchanged)
+    if (text.isEmpty && url.isEmpty && _imageBase64 == null) {
+      setState(() => _errorMessage = '请输入内容、粘贴链接或上传图片');
       return;
     }
 
@@ -93,6 +119,7 @@ class _IngestionScreenState extends ConsumerState<IngestionScreen> {
       final result = await analyzer.analyze(
         text: text,
         imageBase64: _imageBase64,
+        url: url.isNotEmpty ? url : null,
       );
 
       setState(() => _statusText = '正在生成题目...');
@@ -106,6 +133,7 @@ class _IngestionScreenState extends ConsumerState<IngestionScreen> {
             builder: (_) => DeckPreviewScreen(
               result: result,
               sourceText: text,
+              sourceUrl: url.isNotEmpty ? url : null,
               sourceImage: _imagePath,
             ),
           ),
@@ -124,6 +152,7 @@ class _IngestionScreenState extends ConsumerState<IngestionScreen> {
   @override
   void dispose() {
     _textController.dispose();
+    _urlController.dispose();
     super.dispose();
   }
 
@@ -149,6 +178,17 @@ class _IngestionScreenState extends ConsumerState<IngestionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 模式选择
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('快速'), icon: Icon(Icons.bolt, size: 18)),
+              ButtonSegment(value: true, label: Text('深度'), icon: Icon(Icons.psychology, size: 18)),
+            ],
+            selected: {_deepMode},
+            onSelectionChanged: (s) => setState(() => _deepMode = s.first),
+            style: ButtonStyle(visualDensity: VisualDensity.compact),
+          ),
+          const SizedBox(height: 16),
           // 说明
           Container(
             padding: const EdgeInsets.all(16),
@@ -209,6 +249,28 @@ class _IngestionScreenState extends ConsumerState<IngestionScreen> {
                 borderRadius: BorderRadius.circular(16),
                 borderSide: const BorderSide(color: AppColors.blue, width: 2),
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // URL 输入
+          TextField(
+            controller: _urlController,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              hintText: '或粘贴网页链接（知乎、公众号等）',
+              hintStyle: TextStyle(color: AppColors.textLight, fontSize: 14),
+              prefixIcon: const Icon(Icons.link, size: 20),
+              filled: true,
+              fillColor: AppColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: AppColors.blue, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
           ),
           const SizedBox(height: 12),

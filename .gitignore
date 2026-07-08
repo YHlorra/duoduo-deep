@@ -73,5 +73,15 @@ key.properties
 *.freezed.dart
 *.mocks.dart
 
+# ============ Deepwork progress state ============
+.slim/deepwork/
+
 # ============ OS files ============
 Thumbs.db
+
+# ============ Private internal docs (exclude from open-source release) ============
+.workbuddy/
+AGENTS.md
+docs/enhanced-pipeline-design.md
+docs/investigation-format-exception-20260708.md
+openspec/

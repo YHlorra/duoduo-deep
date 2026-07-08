@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/database/database_helper.dart';
+import '../../data/models/app_prefs.dart';
 import '../../data/models/deck.dart';
 import '../../data/models/question.dart';
 import '../../data/models/study_record.dart';
@@ -8,6 +9,84 @@ import '../../data/models/user_stats.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/gamification_service.dart';
 import '../../services/openai_service.dart';
+import '../../services/socratic_dialog_service.dart';
+import '../../services/sm2_algorithm.dart';
+
+// ============ 概念掌握度 ============
+
+/// 概念掌握度管理
+final conceptMasteryProvider = StateNotifierProvider<ConceptMasteryNotifier, AsyncValue<List<ConceptMasteryInfo>>>((ref) {
+  return ConceptMasteryNotifier(ref.read(databaseProvider));
+});
+
+class ConceptMasteryNotifier extends StateNotifier<AsyncValue<List<ConceptMasteryInfo>>> {
+  final DatabaseHelper _db;
+
+  ConceptMasteryNotifier(this._db) : super(const AsyncValue.loading()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final maps = await _db.getAllConceptMastery();
+      final infos = maps.map((m) => ConceptMasteryInfo(
+        name: m['concept_name'] as String,
+        easeFactor: (m['ease_factor'] as num).toDouble(),
+        intervalDays: m['interval_days'] as int,
+        repetitions: m['repetitions'] as int,
+        nextReviewDate: m['next_review_date'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(m['next_review_date'] as int)
+            : null,
+        lastResult: m['last_result'] as String?,
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(m['updated_at'] as int),
+      )).toList();
+      state = AsyncValue.data(infos);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  /// 更新概念掌握度（SM-2）
+  Future<void> recordAnswer(String conceptName, {required bool correct, bool socraticUnderstood = false}) async {
+    final existing = await _db.getConceptMastery(conceptName);
+    final currentEase = existing?['ease_factor'] as double? ?? 2.5;
+    final currentInterval = existing?['interval_days'] as int? ?? 0;
+    final currentReps = existing?['repetitions'] as int? ?? 0;
+
+    final quality = correct ? 4 : (socraticUnderstood ? 3 : 1);
+    final result = sm2(
+      easeFactor: currentEase,
+      intervalDays: currentInterval,
+      repetitions: currentReps,
+      quality: quality,
+    );
+
+    await _db.updateConceptMastery(
+      conceptName,
+      easeFactor: result.easeFactor,
+      intervalDays: result.intervalDays,
+      repetitions: result.repetitions,
+      nextReviewDate: result.nextReviewDate.millisecondsSinceEpoch,
+      lastResult: correct ? 'correct' : 'wrong',
+    );
+
+    await _load();
+  }
+
+  /// 记录一道题的所有概念
+  Future<void> recordQuestionAnswer(List<String> concepts, {required bool correct}) async {
+    for (final concept in concepts) {
+      if (concept.trim().isEmpty) continue;
+      await recordAnswer(concept, correct: correct);
+    }
+  }
+
+  /// 获取今日到期概念
+  Future<List<String>> getDueConcepts() => _db.getDueConceptNames();
+
+  /// 刷新
+  Future<void> refresh() => _load();
+}
 
 // ============ 基础服务 Provider ============
 
@@ -25,6 +104,10 @@ final contentAnalyzerProvider = Provider<ContentAnalyzer>((ref) {
 
 final gamificationServiceProvider = Provider<GamificationService>((ref) {
   return GamificationService(ref.read(databaseProvider));
+});
+
+final socraticDialogServiceProvider = Provider<SocraticDialogService>((ref) {
+  return SocraticDialogService(ref.read(openaiServiceProvider));
 });
 
 // ============ 数据 Provider ============
@@ -111,7 +194,7 @@ class DeckOperations {
   DeckOperations(this._ref);
 
   /// 保存分析结果为题包
-  Future<String> saveAnalysisResult(AnalysisResult result, {String? sourceText, String? sourceImage}) async {
+  Future<String> saveAnalysisResult(AnalysisResult result, {String? sourceText, String? sourceUrl, String? sourceImage}) async {
     final db = _ref.read(databaseProvider);
     final now = DateTime.now();
     final deckId = now.microsecondsSinceEpoch.toString();
@@ -120,7 +203,9 @@ class DeckOperations {
       id: deckId,
       title: result.title,
       sourceText: sourceText,
+      sourceUrl: sourceUrl,
       sourceImage: sourceImage,
+      concepts: result.conceptNames,
       questionCount: result.questions.length,
       createdAt: now,
       updatedAt: now,
@@ -138,11 +223,14 @@ class DeckOperations {
         explanation: question.explanation,
         matchLeft: question.matchLeft,
         matchRight: question.matchRight,
+        difficulty: question.difficulty,
+        cognitiveLevel: question.cognitiveLevel,
       ));
     }
 
-    // 刷新题包列表
+    // 刷新题包列表 + 随机模式题库
     _ref.invalidate(deckListProvider);
+    _ref.invalidate(allQuestionsProvider);
 
     return deckId;
   }
@@ -209,6 +297,34 @@ class LearningModeNotifier extends StateNotifier<LearningMode> {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('learning_mode', mode.index);
+  }
+}
+
+// ============ 学习偏好设置 ============
+
+/// 学习偏好设置
+final appPrefsProvider =
+    StateNotifierProvider<AppPrefsNotifier, AsyncValue<AppPrefs>>((ref) {
+  return AppPrefsNotifier();
+});
+
+class AppPrefsNotifier extends StateNotifier<AsyncValue<AppPrefs>> {
+  AppPrefsNotifier() : super(const AsyncValue.loading()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await AppPrefs.load();
+      state = AsyncValue.data(prefs);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> update(AppPrefs prefs) async {
+    await prefs.save();
+    state = AsyncValue.data(prefs);
   }
 }
 

@@ -24,8 +24,9 @@ class DatabaseHelper {
     final path = join(dbPath, 'dlg_q.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -36,7 +37,9 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         source_text TEXT,
+        source_url TEXT,
         source_image TEXT,
+        concepts TEXT,
         question_count INTEGER DEFAULT 0,
         mastery_level INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
@@ -56,6 +59,8 @@ class DatabaseHelper {
         explanation TEXT,
         match_left TEXT,
         match_right TEXT,
+        difficulty TEXT,
+        cognitive_level TEXT,
         FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE
       )
     ''');
@@ -86,6 +91,19 @@ class DatabaseHelper {
       )
     ''');
 
+    // 概念掌握度表
+    await db.execute('''
+      CREATE TABLE concept_mastery (
+        concept_name TEXT PRIMARY KEY,
+        ease_factor REAL DEFAULT 2.5,
+        interval_days INTEGER DEFAULT 0,
+        repetitions INTEGER DEFAULT 0,
+        next_review_date INTEGER,
+        last_result TEXT,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
     // 初始化用户统计
     await db.insert('user_stats', {
       'id': 1,
@@ -97,6 +115,26 @@ class DatabaseHelper {
       'daily_goal': 50,
       'today_xp': 0,
     });
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE questions ADD COLUMN difficulty TEXT');
+      await db.execute('ALTER TABLE questions ADD COLUMN cognitive_level TEXT');
+      await db.execute('ALTER TABLE decks ADD COLUMN source_url TEXT');
+      await db.execute('ALTER TABLE decks ADD COLUMN concepts TEXT');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS concept_mastery (
+          concept_name TEXT PRIMARY KEY,
+          ease_factor REAL DEFAULT 2.5,
+          interval_days INTEGER DEFAULT 0,
+          repetitions INTEGER DEFAULT 0,
+          next_review_date INTEGER,
+          last_result TEXT,
+          updated_at INTEGER NOT NULL
+        )
+      ''');
+    }
   }
 
   // ============ Deck 操作 ============
@@ -147,6 +185,8 @@ class DatabaseHelper {
       explanation: question.explanation,
       matchLeft: question.matchLeft,
       matchRight: question.matchRight,
+      difficulty: question.difficulty,
+      cognitiveLevel: question.cognitiveLevel,
     );
     await db.insert('questions', q.toMap());
     return id;
@@ -206,5 +246,72 @@ class DatabaseHelper {
   Future<void> updateUserStats(UserStats stats) async {
     final db = await database;
     await db.update('user_stats', stats.toMap(), where: 'id = 1');
+  }
+
+  // ============ ConceptMastery 操作 ============
+
+  /// 获取概念掌握度
+  Future<Map<String, dynamic>?> getConceptMastery(String conceptName) async {
+    final db = await database;
+    final maps = await db.query(
+      'concept_mastery',
+      where: 'concept_name = ?',
+      whereArgs: [conceptName],
+    );
+    if (maps.isEmpty) return null;
+    return maps.first;
+  }
+
+  /// 更新概念掌握度
+  Future<void> updateConceptMastery(
+    String conceptName, {
+    required double easeFactor,
+    required int intervalDays,
+    required int repetitions,
+    int? nextReviewDate,
+    String? lastResult,
+  }) async {
+    final db = await database;
+    await db.insert('concept_mastery', {
+      'concept_name': conceptName,
+      'ease_factor': easeFactor,
+      'interval_days': intervalDays,
+      'repetitions': repetitions,
+      'next_review_date': nextReviewDate,
+      'last_result': lastResult,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 获取今日应复习的概念
+  Future<List<String>> getDueConceptNames() async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final maps = await db.query(
+      'concept_mastery',
+      where: 'next_review_date IS NOT NULL AND next_review_date <= ?',
+      whereArgs: [now],
+      columns: ['concept_name'],
+    );
+    return maps.map((m) => m['concept_name'] as String).toList();
+  }
+
+  /// 获取所有已追踪的概念名称
+  Future<List<String>> getTrackedConceptNames() async {
+    final db = await database;
+    final maps = await db.query('concept_mastery', columns: ['concept_name']);
+    return maps.map((m) => m['concept_name'] as String).toList();
+  }
+
+  /// 获取所有概念掌握度信息（按更新时间倒序）
+  Future<List<Map<String, dynamic>>> getAllConceptMastery() async {
+    final db = await database;
+    return db.query('concept_mastery', orderBy: 'updated_at DESC');
+  }
+
+  /// 删除学习记录（题包删除时同步删除）
+  Future<void> deleteConceptMastery(String conceptName) async {
+    final db = await database;
+    await db.delete('concept_mastery', where: 'concept_name = ?', whereArgs: [conceptName]);
   }
 }

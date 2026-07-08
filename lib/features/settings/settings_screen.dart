@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../services/openai_service.dart';
 import '../../shared/widgets/duo_button.dart';
+import '../concept/concept_list_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -50,7 +51,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _selectedModel = model;
         _useCustomModel = false;
       } else {
-        // 不在预设列表中，使用自定义模型
+        // 不在预设列表中，使用自定义模式
         _useCustomModel = true;
         _customModelController.text = model;
       }
@@ -128,319 +129,340 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // === AI 配置 ===
-              const Text(
-                'AI 接口配置',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border, width: 2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 厂商选择
-                    const Text(
-                      'AI 厂商',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // === AI 配置 ===
+                  const Text(
+                    'AI 接口配置',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
                     ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedProviderId,
-                          isExpanded: true,
-                          items: AIProviders.builtin.map((p) {
-                            return DropdownMenuItem(
-                              value: p.id,
-                              child: Text(
-                                p.name,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border, width: 2),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 厂商选择
+                        const Text(
+                          'AI 厂商',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedProviderId,
+                              isExpanded: true,
+                              items: AIProviders.builtin.map((p) {
+                                return DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text(
+                                    p.name,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: _onProviderChanged,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+    
+                        // API Key
+                        const Text(
+                          'API Key',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _apiKeyController,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            hintText: _currentProvider.keyHint,
+                            hintStyle: const TextStyle(color: AppColors.textLight),
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(Icons.key, color: AppColors.textLight),
+                          ),
+                        ),
+                        if (_currentProvider.keyHelpUrl.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () {
+                              // 显示获取 Key 的提示
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('前往 ${_currentProvider.keyHelpUrl} 获取 API Key'),
+                                  backgroundColor: AppColors.blue,
+                                ),
+                              );
+                            },
+                            child: Text(
+                              '在 ${_currentProvider.keyHelpUrl} 获取 API Key',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.blue,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+    
+                        // Base URL
+                        const Text(
+                          'API Base URL',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _baseUrlController,
+                          decoration: InputDecoration(
+                            hintText: 'https://api.example.com/v1',
+                            hintStyle: const TextStyle(color: AppColors.textLight),
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(Icons.link, color: AppColors.textLight),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+    
+                        // 模型选择
+                        const Text(
+                          '模型',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_currentProvider.models.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _useCustomModel ? '__custom__' : _selectedModel,
+                                isExpanded: true,
+                                items: [
+                                  ..._currentProvider.models.map((m) => DropdownMenuItem(
+                                    value: m,
+                                    child: Text(m, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                                  )),
+                                  const DropdownMenuItem(
+                                    value: '__custom__',
+                                    child: Text('自定义模型...', style: TextStyle(fontSize: 15, color: AppColors.blue)),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == '__custom__') {
+                                    setState(() => _useCustomModel = true);
+                                  } else if (value != null) {
+                                    setState(() {
+                                      _selectedModel = value;
+                                      _useCustomModel = false;
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                          )
+                        else
+                          // 自定义厂商没有预设模型，直接显示输入框
+                          TextField(
+                            controller: _customModelController,
+                            decoration: InputDecoration(
+                              hintText: '输入模型名称',
+                              hintStyle: const TextStyle(color: AppColors.textLight),
+                              filled: true,
+                              fillColor: AppColors.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        if (_useCustomModel && _currentProvider.models.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _customModelController,
+                            decoration: InputDecoration(
+                              hintText: '输入模型名称',
+                              hintStyle: const TextStyle(color: AppColors.textLight),
+                              filled: true,
+                              fillColor: AppColors.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // === 学习目标 ===
+                  const Text(
+                    '学习目标',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border, width: 2),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '每日 XP 目标',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [10, 20, 30, 50, 100].map((goal) {
+                            final isSelected = _dailyGoal == goal;
+                            return Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: GestureDetector(
+                                  onTap: () => setState(() => _dailyGoal = goal),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? AppColors.green : AppColors.surface,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected ? AppColors.green : AppColors.border,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          '$goal XP',
+                                          maxLines: 1,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: isSelected ? Colors.white : AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
                           }).toList(),
-                          onChanged: _onProviderChanged,
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
+                  ),
+                   const SizedBox(height: 32),
 
-                    // API Key
-                    const Text(
-                      'API Key',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _apiKeyController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        hintText: _currentProvider.keyHint,
-                        hintStyle: const TextStyle(color: AppColors.textLight),
-                        filled: true,
-                        fillColor: AppColors.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        prefixIcon: const Icon(Icons.key, color: AppColors.textLight),
-                      ),
-                    ),
-                    if (_currentProvider.keyHelpUrl.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () {
-                          // 显示获取 Key 的提示
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('前往 ${_currentProvider.keyHelpUrl} 获取 API Key'),
-                              backgroundColor: AppColors.blue,
-                            ),
-                          );
-                        },
-                        child: Text(
-                          '在 ${_currentProvider.keyHelpUrl} 获取 API Key',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.blue,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
+                   // === 保存按钮 ===
+                  DuoButton(
+                    label: _isSaving ? '保存中...' : '保存设置',
+                    color: AppColors.green,
+                    width: double.infinity,
+                    height: 56,
+                    icon: Icons.check,
+                    onPressed: _isSaving ? null : _saveSettings,
+                  ),
+                  const SizedBox(height: 24),
 
-                    // Base URL
-                    const Text(
-                      'API Base URL',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
+                  // === 数据管理 ===
+                  const Text(
+                    '数据管理',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _baseUrlController,
-                      decoration: InputDecoration(
-                        hintText: 'https://api.example.com/v1',
-                        hintStyle: const TextStyle(color: AppColors.textLight),
-                        filled: true,
-                        fillColor: AppColors.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        prefixIcon: const Icon(Icons.link, color: AppColors.textLight),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 模型选择
-                    const Text(
-                      '模型',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_currentProvider.models.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _useCustomModel ? '__custom__' : _selectedModel,
-                            isExpanded: true,
-                            items: [
-                              ..._currentProvider.models.map((m) => DropdownMenuItem(
-                                value: m,
-                                child: Text(m, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                              )),
-                              const DropdownMenuItem(
-                                value: '__custom__',
-                                child: Text('自定义模型...', style: TextStyle(fontSize: 15, color: AppColors.blue)),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              if (value == '__custom__') {
-                                setState(() => _useCustomModel = true);
-                              } else if (value != null) {
-                                setState(() {
-                                  _selectedModel = value;
-                                  _useCustomModel = false;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      )
-                    else
-                      // 自定义厂商没有预设模型，直接显示输入框
-                      TextField(
-                        controller: _customModelController,
-                        decoration: InputDecoration(
-                          hintText: '输入模型名称',
-                          hintStyle: const TextStyle(color: AppColors.textLight),
-                          filled: true,
-                          fillColor: AppColors.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                    if (_useCustomModel && _currentProvider.models.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _customModelController,
-                        decoration: InputDecoration(
-                          hintText: '输入模型名称',
-                          hintStyle: const TextStyle(color: AppColors.textLight),
-                          filled: true,
-                          fillColor: AppColors.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                    ],
+                  ),
+                  const SizedBox(height: 12),
+                   _SettingItem(
+                     icon: Icons.lightbulb_outline,
+                      title: '概念页',
+                     color: AppColors.blue,
+                     onTap: () => Navigator.of(context).push(
+                       MaterialPageRoute(
+                         builder: (_) => const ConceptListScreen(),
+                       ),
+                     ),
+                   ),
+                   const SizedBox(height: 12),
+                   _SettingItem(
+                     icon: Icons.delete_forever,
+                      title: '清除所有数据',
+                     color: AppColors.red,
+                     onTap: () => _showClearDataDialog(context),
+                   ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // === 学习目标 ===
-              const Text(
-                '学习目标',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border, width: 2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '每日 XP 目标',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      children: [10, 20, 30, 50, 100].map((goal) {
-                        final isSelected = _dailyGoal == goal;
-                        return GestureDetector(
-                          onTap: () => setState(() => _dailyGoal = goal),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected ? AppColors.green : AppColors.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? AppColors.green : AppColors.border,
-                                width: 2,
-                              ),
-                            ),
-                            child: Text(
-                              '$goal XP',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: isSelected ? Colors.white : AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // === 保存按钮 ===
-              DuoButton(
-                label: _isSaving ? '保存中...' : '保存设置',
-                color: AppColors.green,
-                width: double.infinity,
-                height: 56,
-                icon: Icons.check,
-                onPressed: _isSaving ? null : _saveSettings,
-              ),
-              const SizedBox(height: 16),
-
-              // === 数据管理 ===
-              const Text(
-                '数据管理',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _SettingItem(
-                icon: Icons.delete_forever,
-                title: '清除所有数据',
-                color: AppColors.red,
-                onTap: () => _showClearDataDialog(context),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+               ),
+             ),
+           ),
+           );
+          }
 
   Future<void> _showClearDataDialog(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -470,6 +492,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await db.deleteDeck(deck.id);
       }
       ref.invalidate(deckListProvider);
+      ref.invalidate(allQuestionsProvider);
       ref.invalidate(userStatsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

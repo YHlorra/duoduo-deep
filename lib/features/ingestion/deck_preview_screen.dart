@@ -12,12 +12,14 @@ import '../../shared/widgets/duo_button.dart';
 class DeckPreviewScreen extends ConsumerStatefulWidget {
   final AnalysisResult result;
   final String? sourceText;
+  final String? sourceUrl;
   final String? sourceImage;
 
   const DeckPreviewScreen({
     super.key,
     required this.result,
     this.sourceText,
+    this.sourceUrl,
     this.sourceImage,
   });
 
@@ -34,6 +36,7 @@ class _DeckPreviewScreenState extends ConsumerState<DeckPreviewScreen> {
       await ref.read(deckOperationsProvider).saveAnalysisResult(
             widget.result,
             sourceText: widget.sourceText,
+            sourceUrl: widget.sourceUrl,
             sourceImage: widget.sourceImage,
           );
       if (mounted) {
