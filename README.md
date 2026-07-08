@@ -2,6 +2,10 @@
 
 > 多邻国风格的自定义题库学习 APP —— 创建你自己的知识题包，AI 帮你拆题，游戏化打卡学习。
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/YHlorra/duoduo-deep?color=blue)](https://github.com/YHlorra/duoduo-deep/releases)
+[![CI](https://github.com/YHlorra/duoduo-deep/actions/workflows/ci.yml/badge.svg)](https://github.com/YHlorra/duoduo-deep/actions/workflows/ci.yml)
+
 ---
 
 > [!IMPORTANT]
@@ -10,18 +14,24 @@
 > 本仓库是 [xuanli199/duoduo](https://github.com/xuanli199/duoduo) 的**二次开发增强版**（fork），基于上游 `main` 分支最新 commit。
 >
 > - 上游版权 © [xuanli199](https://github.com/xuanli199)，原项目采用 [MIT License](https://opensource.org/licenses/MIT)
-> - 本 fork 版权 © 2026 YHlorra & duoduo-deep contributors
-> - 完整协议见 [LICENSE](./LICENSE) · 上游说明见 [UPSTREAM.md](./UPSTREAM.md) · 变更记录见 [CHANGELOG.md](./CHANGELOG.md)
+> - 本 fork 版权 © 2026 YHlorra & duoduo-deep contributors · [LICENSE](./LICENSE) · [上游说明](./UPSTREAM.md) · [变更记录](./CHANGELOG.md)
 >
 > 在保留原协议声明的前提下，本 fork 新增了**深度模式 (Deep Mode)**、SM-2 间隔重复、苏格拉底对话、JSON Schema 约束、概念页等能力。
 
 ---
 
-## 这是什么
+## 🚀 快速开始
 
-一款基于 AI 的个人题库学习 APP。粘贴一段学习材料（文本/图片/URL），AI 帮你自动拆成可练习的题目；每道题对应一个**概念**，答对答错都会被记录，SM-2 算法按记忆曲线安排下一次复习时间。
+```bash
+git clone https://github.com/YHlorra/duoduo-deep.git
+cd duoduo-deep
+flutter pub get
+flutter run                 # 连真机/模拟器跑
+```
 
-不是 Duolingo 复刻 —— 是你自己的学习材料 + 你自己的 AI 出题逻辑 + 你自己的复习节奏。
+构建 Release APK：`flutter build apk --release`，产物在 `build/app/outputs/flutter-apk/`。
+
+> 前置：Flutter ≥ 3.5 · Android SDK · JDK 17+
 
 ---
 
@@ -82,9 +92,7 @@ AI 拆题输入 + 解析预览
 
 ## 📥 下载
 
-前往 [Releases](https://github.com/YHlorra/duoduo-deep/releases) 下载最新 APK。Release key 签名，sideload 安装到 Android 设备即可。
-
-最新版 [v0.1.1](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.1)（57MB，39/39 tests ✅）。
+最新版 [v0.1.1](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.1)（57MB，39/39 tests ✅）。历史版本见 [Releases](https://github.com/YHlorra/duoduo-deep/releases)。
 
 ---
 
@@ -105,3 +113,8 @@ AI 拆题输入 + 解析预览
 - 上游说明：[UPSTREAM.md](./UPSTREAM.md)
 - 变更记录：[CHANGELOG.md](./CHANGELOG.md)
 - 开源组件：见 `pubspec.yaml`
+
+<!-- badge refs -->
+[license-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[release-badge]: https://img.shields.io/github/v/release/YHlorra/duoduo-deep?color=blue
+[ci-badge]: https://github.com/YHlorra/duoduo-deep/actions/workflows/ci.yml/badge.svg
