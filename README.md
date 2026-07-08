@@ -92,7 +92,10 @@ AI 拆题输入 + 解析预览
 
 ## 📥 下载
 
-最新版 [v0.1.1](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.1)（57MB，39/39 tests ✅）。历史版本见 [Releases](https://github.com/YHlorra/duoduo-deep/releases)。
+- **最新稳定版** [v0.1.1](https://github.com/YHlorra/duoduo-deep/releases/tag/v0.1.1)（57MB，39/39 tests ✅）
+- **每日构建** [nightly](https://github.com/YHlorra/duoduo-deep/releases/tag/nightly)（每次 push 到 main 自动更新）
+
+历史版本见 [Releases](https://github.com/YHlorra/duoduo-deep/releases)。
 
 ---
 
