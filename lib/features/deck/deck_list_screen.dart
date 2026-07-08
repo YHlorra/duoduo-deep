@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../data/models/deck.dart';
-import '../../shared/widgets/stats_widgets.dart';
 import '../learning/quiz_screen.dart';
 import '../ingestion/ingestion_screen.dart';
 
