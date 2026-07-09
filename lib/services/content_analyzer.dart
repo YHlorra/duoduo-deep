@@ -5,6 +5,7 @@ import '../data/models/question.dart';
 import '../data/models/schemas/deck_schema.dart';
 import 'output_constraint.dart';
 import 'json_extractor.dart';
+import 'log_service.dart';
 
 /// 分析结果
 class AnalysisResult {
@@ -229,6 +230,11 @@ class ContentAnalyzer {
           );
           json = JsonExtractor.parse(fixed) ?? jsonDecode(fixed) as Map<String, dynamic>;
         } catch (_) {
+          LogService.instance.log('parse', 'error', 'json_parse_failed', {
+            'rawLength': response.length,
+            'rawPreview': response.substring(0, response.length.clamp(0, 1000)),
+            'rawTail': response.length > 500 ? response.substring(response.length - 500) : '',
+          });
           throw Exception('无法解析 AI 返回的内容');
         }
       }
@@ -249,6 +255,10 @@ class ContentAnalyzer {
     }
 
     if (questions.isEmpty) {
+      LogService.instance.log('parse', 'error', 'no_valid_questions', {
+        'title': title,
+        'rawQuestionCount': questionsJson.length,
+      });
       throw Exception('AI 未生成有效题目');
     }
 

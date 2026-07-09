@@ -1,25 +1,36 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'log_service.dart';
 import 'output_constraint.dart';
 import 'json_extractor.dart';
 import '../data/models/schemas/deck_schema.dart';
 
-/// Extracts the message content from an API response.
-/// Throws on truncation (finish_reason == "length").
-String _extractContent(Response response) {
-  final data = response.data as Map<String, dynamic>;
-  final choices = data['choices'] as List;
-  if (choices.isEmpty) {
-    throw Exception('API 返回空结果');
+  /// Extracts the message content from an API response.
+  /// Returns content regardless of finish_reason. Caller must check
+  /// [Response] separately if truncation detection is needed.
+  String _extractContent(Response response) {
+    final data = response.data as Map<String, dynamic>;
+    final choices = data['choices'] as List;
+    if (choices.isEmpty) {
+      throw Exception('API 返回空结果');
+    }
+    final choice = choices[0] as Map<String, dynamic>;
+    return choice['message']['content'] as String;
   }
-  final choice = choices[0] as Map<String, dynamic>;
-  final finishReason = choice['finish_reason'] as String?;
-  if (finishReason == 'length') {
-    throw Exception('输出被截断(max_tokens 不足，请提高 max_tokens 或减少输出内容)');
+
+  /// Extracts content and reports whether the output was truncated.
+  ({String content, bool truncated}) _extractContentWithTruncation(Response response) {
+    final data = response.data as Map<String, dynamic>;
+    final choices = data['choices'] as List;
+    if (choices.isEmpty) {
+      throw Exception('API 返回空结果');
+    }
+    final choice = choices[0] as Map<String, dynamic>;
+    final finishReason = choice['finish_reason'] as String?;
+    final content = choice['message']['content'] as String;
+    return (content: content, truncated: finishReason == 'length');
   }
-  return choice['message']['content'] as String;
-}
 
 /// AI 厂商预设
 class AIProviderPreset {
@@ -205,6 +216,10 @@ class OpenAIService {
   }
 
   /// 调用 AI Chat Completions API（OpenAI 兼容格式）
+  ///
+  /// Set [throwOnTruncation] to false to return truncated content instead of
+  /// throwing — callers that can handle partial output (e.g. two-pass
+  /// generation) should use this.
   Future<String> chatCompletion({
     required String systemPrompt,
     required String userContent,
@@ -213,6 +228,7 @@ class OpenAIService {
     OutputConstraintLevel? outputConstraint,
     Map<String, dynamic>? schema,
     int maxTokens = 4096,
+    bool throwOnTruncation = true,
   }) async {
     final apiKey = await getApiKey();
     if (apiKey == null || apiKey.isEmpty) {
@@ -221,6 +237,16 @@ class OpenAIService {
 
     final model = await getModel();
     final baseUrl = await getBaseUrl();
+
+    LogService.instance.log('chatCompletion', 'info', 'request', {
+      'model': model,
+      'baseUrl': baseUrl,
+      'maxTokens': maxTokens,
+      'hasSchema': schema != null,
+      'outputConstraint': outputConstraint?.name,
+      'hasImage': imageBase64 != null,
+    });
+    final sw = Stopwatch()..start();
 
     final messages = <Map<String, dynamic>>[
       {'role': 'system', 'content': systemPrompt},
@@ -277,10 +303,36 @@ class OpenAIService {
         throw Exception('API 请求失败: ${response.statusCode}');
       }
 
-      return _extractContent(response);
+      final String content;
+      if (throwOnTruncation) {
+        content = _extractContent(response);
+      } else {
+        final result = _extractContentWithTruncation(response);
+        content = result.content;
+        if (result.truncated) {
+          LogService.instance.log('chatCompletion', 'warn', 'output_truncated', {
+            'contentLength': content.length,
+            'maxTokens': maxTokens,
+            'model': model,
+          });
+        }
+      }
+      sw.stop();
+      LogService.instance.log('chatCompletion', 'info', 'response', {
+        'contentLength': content.length,
+        'durationMs': sw.elapsedMilliseconds,
+        'model': model,
+      });
+      return content;
     } on DioException catch (e) {
+      sw.stop();
       final status = e.response?.statusCode;
       final errorMsg = e.response?.data?.toString() ?? e.message ?? '';
+      LogService.instance.log('chatCompletion', 'error', 'dio_error', {
+        'status': status,
+        'errorMsg': errorMsg,
+        'durationMs': sw.elapsedMilliseconds,
+      });
       if ((status == 400 || status == 422) &&
           errorMsg.contains('response_format')) {
         // Graceful degradation: retry without response_format
@@ -300,6 +352,10 @@ class OpenAIService {
         }
         // Cache the degradation so future calls skip L3 immediately
         ProviderCapability.forceLevel(OutputConstraintLevel.level1Prompt);
+        LogService.instance.log('chatCompletion', 'warn', 'degraded_to_prompt', {
+          'reason': 'provider_unsupported_response_format',
+          'status': status,
+        });
         return _extractContent(retry);
       }
       rethrow;
@@ -343,6 +399,12 @@ class OpenAIService {
 
     String? finalContent = '';
     final toolResults = <String>[];
+
+    LogService.instance.log('chatCompletionWithTools', 'info', 'loop_start', {
+      'toolCount': toolDefinitions.length,
+      'maxToolCalls': maxToolCalls,
+    });
+    final loopSw = Stopwatch()..start();
 
     for (var round = 0; round <= maxToolCalls; round++) {
       try {
@@ -420,11 +482,22 @@ class OpenAIService {
             'name': name,
             'content': result,
           });
+
+          LogService.instance.log('chatCompletionWithTools', 'info', 'tool_call', {
+            'round': round,
+            'toolName': name,
+            'resultLength': result.length,
+          });
         }
       } on DioException catch (e) {
         // 若 API 不支持 tools 参数，降级到普通对话
         final errorMsg = e.response?.data?.toString() ?? e.message ?? '';
         if (errorMsg.contains('tools') || errorMsg.contains('tool')) {
+          LogService.instance.log('chatCompletionWithTools', 'warn', 'degraded_to_plain', {
+            'reason': 'provider_unsupported_tools',
+            'errorMsg': errorMsg,
+            'round': round,
+          });
           final content = await chatCompletion(
             systemPrompt: systemPrompt,
             userContent: userContent,
@@ -432,6 +505,13 @@ class OpenAIService {
             outputConstraint: outputConstraint,
             schema: schema,
           );
+          loopSw.stop();
+          LogService.instance.log('chatCompletionWithTools', 'info', 'loop_complete', {
+            'rounds': round,
+            'toolResultsCount': toolResults.length,
+            'toolsSupported': false,
+            'durationMs': loopSw.elapsedMilliseconds,
+          });
           return ToolLoopResult(
             finalContent: content,
             toolResults: [],
@@ -443,6 +523,14 @@ class OpenAIService {
     }
 
     // 达到 maxToolCalls 上限，返回已收集的结果
+    loopSw.stop();
+    LogService.instance.log('chatCompletionWithTools', 'info', 'loop_complete', {
+      'rounds': maxToolCalls,
+      'toolResultsCount': toolResults.length,
+      'toolsSupported': true,
+      'hitMaxToolCalls': true,
+      'durationMs': loopSw.elapsedMilliseconds,
+    });
     return ToolLoopResult(
       finalContent: finalContent,
       toolResults: toolResults,
@@ -469,6 +557,12 @@ class OpenAIService {
         '请判断用户答案是否正确。';
 
     try {
+      LogService.instance.log('judgeFillBlankAnswer', 'info', 'judge_request', {
+        'questionLength': question.length,
+        'userAnswerLength': userAnswer.length,
+        'correctAnswerLength': correctAnswer.length,
+      });
+
       final result = await chatCompletion(
         systemPrompt: systemPrompt,
         userContent: userContent,
@@ -479,12 +573,20 @@ class OpenAIService {
 
       final parsed = JsonExtractor.parse(result);
       if (parsed != null) {
-        return parsed['correct'] == true;
+        final correct = parsed['correct'] == true;
+        LogService.instance.log('judgeFillBlankAnswer', 'info', 'judge_response', {
+          'correct': correct,
+          'resultLength': result.length,
+        });
+        return correct;
       }
       // 解析失败不再静默返回 false — 抛异常让调用方决定降级策略。
       throw Exception('AI 判题返回内容无法解析');
     } catch (e) {
       // API 调用或解析失败 — 抛异常让调用方决定降级策略。
+      LogService.instance.log('judgeFillBlankAnswer', 'error', 'judge_failed', {
+        'error': e.toString(),
+      });
       throw Exception('AI 判题失败: $e');
     }
   }

@@ -19,6 +19,38 @@ void main() {
       });
     });
 
+    group('stripThinkingTags', () {
+      test('removes closed think block', () {
+        final input = '<think>Let me think...</think>{"a":1}';
+        expect(JsonExtractor.stripThinkingTags(input), '{"a":1}');
+      });
+
+      test('removes unclosed think block (truncated)', () {
+        final input = '<think>Let me think about this problem...';
+        expect(JsonExtractor.stripThinkingTags(input), '');
+      });
+
+      test('removes think block with newlines', () {
+        final input = '<think>\nThinking...\nMore thinking...\n</think>{"a":1}';
+        expect(JsonExtractor.stripThinkingTags(input), '{"a":1}');
+      });
+
+      test('handles case-insensitive think tags', () {
+        final input = '<THINK>thinking</THINK>{"a":1}';
+        expect(JsonExtractor.stripThinkingTags(input), '{"a":1}');
+      });
+
+      test('leaves input without think tags unchanged', () {
+        final input = '{"a":1}';
+        expect(JsonExtractor.stripThinkingTags(input), '{"a":1}');
+      });
+
+      test('handles think block with JSON-like content inside', () {
+        final input = '<think>{"foo": "bar"}</think>{"a":1}';
+        expect(JsonExtractor.stripThinkingTags(input), '{"a":1}');
+      });
+    });
+
     group('extractFirstJsonObject', () {
       test('extracts normal JSON', () {
         final input = 'prefix {"a":1} suffix';

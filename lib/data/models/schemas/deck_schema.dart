@@ -127,3 +127,99 @@ const fillBlankJudgeSchema = <String, dynamic>{
     'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1},
   },
 };
+
+/// Phase 2a: question plan schema — small, bounded output.
+const questionPlanSchema = <String, dynamic>{
+  'type': 'object',
+  'additionalProperties': false,
+  'required': ['plan'],
+  'properties': {
+    'plan': {
+      'type': 'array',
+      'minItems': 3,
+      'maxItems': 10,
+      'items': {'\$ref': '#/\$defs/questionStub'},
+    },
+  },
+  '\$defs': {
+    'questionStub': {
+      'type': 'object',
+      'additionalProperties': false,
+      'required': ['type', 'difficulty', 'cognitiveLevel', 'concept', 'briefContent'],
+      'properties': {
+        'type': {
+          'type': 'string',
+          'enum': ['multiple_choice', 'fill_blank', 'true_false', 'matching', 'ordering'],
+        },
+        'difficulty': {'type': 'string', 'enum': ['easy', 'medium', 'hard']},
+        'cognitiveLevel': {'type': 'string', 'enum': ['knowledge', 'skill']},
+        'concept': {'type': 'string', 'minLength': 1, 'maxLength': 100},
+        'briefContent': {'type': 'string', 'minLength': 1, 'maxLength': 200},
+      },
+    },
+  },
+};
+
+/// Phase 2b: batch expansion schema — expands 2-3 stubs into full questions.
+const questionBatchSchema = <String, dynamic>{
+  'type': 'object',
+  'additionalProperties': false,
+  'required': ['questions'],
+  'properties': {
+    'concepts': {
+      'type': 'array',
+      'items': {'type': 'string'},
+    },
+    'questions': {
+      'type': 'array',
+      'minItems': 1,
+      'maxItems': 3,
+      'items': {'\$ref': '#/\$defs/question'},
+    },
+  },
+  '\$defs': {
+    'question': <String, dynamic>{
+      'type': 'object',
+      'additionalProperties': false,
+      'required': [
+        'type',
+        'content',
+        'difficulty',
+        'cognitiveLevel',
+        'options',
+        'answer',
+        'explanation',
+      ],
+      'properties': {
+        'type': {
+          'type': 'string',
+          'enum': [
+            'multiple_choice',
+            'fill_blank',
+            'true_false',
+            'matching',
+            'ordering',
+          ],
+        },
+        'content': {'type': 'string', 'minLength': 1},
+        'difficulty': {
+          'type': 'string',
+          'enum': ['easy', 'medium', 'hard'],
+        },
+        'cognitiveLevel': {
+          'type': 'string',
+          'enum': ['knowledge', 'skill'],
+        },
+        'options': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'minItems': 2,
+        },
+        'answer': {'type': 'string'},
+        'explanation': {'type': 'string'},
+        'match_left': {'type': 'array', 'items': {'type': 'string'}},
+        'match_right': {'type': 'array', 'items': {'type': 'string'}},
+      },
+    },
+  },
+};

@@ -107,6 +107,19 @@ class JsonExtractor {
     return null;
   }
 
+  /// Strip AI thinking tags that some models (MiniMax, etc.) prepend.
+  /// Handles both closed and unclosed (truncated) thinking blocks.
+  static String stripThinkingTags(String input) {
+    // Remove closed <think>...</think> blocks (case-insensitive, multi-line)
+    var result = input.replaceAll(RegExp(r'<think>[\s\S]*?</think>', caseSensitive: false), '').trim();
+    // Remove unclosed <think> block (everything from <think> to end)
+    final thinkStart = result.toLowerCase().indexOf('<think>');
+    if (thinkStart != -1) {
+      result = result.substring(0, thinkStart).trim();
+    }
+    return result;
+  }
+
   /// Remove markdown code fences, keeping content from the first complete block only.
   ///
   /// Handles both ```` ```json ... ``` ```` and ```` ``` ... ``` ```` variants.
@@ -146,7 +159,8 @@ class JsonExtractor {
   ///
   /// Returns `null` if any step fails.
   static Map<String, dynamic>? parse(String input) {
-    var text = stripMarkdownFences(input);
+    var text = stripThinkingTags(input);
+    text = stripMarkdownFences(text);
     var extracted = extractFirstJsonObject(text);
 
     if (extracted == null) {

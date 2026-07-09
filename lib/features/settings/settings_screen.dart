@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
+import '../../services/log_service.dart';
 import '../../services/openai_service.dart';
 import '../../services/output_constraint.dart';
 import '../../shared/widgets/duo_button.dart';
@@ -445,29 +446,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                   _SettingItem(
-                     icon: Icons.lightbulb_outline,
-                      title: '概念页',
-                     color: AppColors.blue,
-                     onTap: () => Navigator.of(context).push(
-                       MaterialPageRoute(
-                         builder: (_) => const ConceptListScreen(),
-                       ),
-                     ),
-                   ),
-                   const SizedBox(height: 12),
-                   _SettingItem(
-                     icon: Icons.delete_forever,
-                      title: '清除所有数据',
-                     color: AppColors.red,
-                     onTap: () => _showClearDataDialog(context),
-                   ),
+                    _SettingItem(
+                      icon: Icons.lightbulb_outline,
+                       title: '概念页',
+                      color: AppColors.blue,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ConceptListScreen(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SettingItem(
+                      icon: Icons.download,
+                      title: '导出日志',
+                      color: AppColors.blue,
+                      onTap: () => _exportLogs(context),
+                    ),
+                    const SizedBox(height: 12),
+                    _SettingItem(
+                      icon: Icons.delete_forever,
+                       title: '清除所有数据',
+                      color: AppColors.red,
+                      onTap: () => _showClearDataDialog(context),
+                    ),
                   ],
                ),
              ),
            ),
            );
           }
+
+  Future<void> _exportLogs(BuildContext context) async {
+    try {
+      final result = await LogService.instance.export();
+      if (mounted) {
+        final msg = result != null ? '日志已导出: $result' : '导出失败';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: result != null ? AppColors.green : AppColors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('导出失败: $e'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _showClearDataDialog(BuildContext context) async {
     final confirmed = await showDialog<bool>(

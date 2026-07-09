@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/deck.dart';
@@ -20,6 +21,9 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
+    if (kIsWeb) {
+      return _WebDatabase();
+    }
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'dlg_q.db');
     return await openDatabase(
@@ -314,4 +318,127 @@ class DatabaseHelper {
     final db = await database;
     await db.delete('concept_mastery', where: 'concept_name = ?', whereArgs: [conceptName]);
   }
+}
+
+/// Web 平台内存数据库（sqflite 不支持 web）
+class _WebDatabase implements Database {
+  final Map<String, List<Map<String, dynamic>>> _tables = {};
+
+  @override
+  Future<int> insert(String table, Map<String, dynamic> values, {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) async {
+    _tables.putIfAbsent(table, () => []);
+    _tables[table]!.add(Map<String, dynamic>.from(values));
+    return 1;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> query(String table, {bool? distinct, List<String>? columns, String? where, List<Object?>? whereArgs, String? groupBy, String? having, String? orderBy, int? limit, int? offset}) async {
+    final rows = List<Map<String, dynamic>>.from(_tables[table] ?? []);
+    if (orderBy != null && orderBy.contains('DESC')) {
+      rows.sort((a, b) => (b['created_at'] ?? 0).compareTo(a['created_at'] ?? 0));
+    }
+    if (limit != null && limit < rows.length) {
+      return rows.sublist(0, limit);
+    }
+    return rows;
+  }
+
+  @override
+  Future<int> update(String table, Map<String, dynamic> values, {String? where, List<Object?>? whereArgs, ConflictAlgorithm? conflictAlgorithm}) async {
+    return 0;
+  }
+
+  @override
+  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) async {
+    if (where == null) {
+      _tables[table] = [];
+    }
+    return 0;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> rawQuery(String sql, [List<Object?>? arguments]) async {
+    return [];
+  }
+
+  @override
+  Future<int> rawInsert(String sql, [List<Object?>? arguments]) async => 1;
+
+  @override
+  Future<int> rawUpdate(String sql, [List<Object?>? arguments]) async => 0;
+
+  @override
+  Future<int> rawDelete(String sql, [List<Object?>? arguments]) async => 0;
+
+  @override
+  Future<QueryCursor> queryCursor(String table, {bool? distinct, List<String>? columns, String? where, List<Object?>? whereArgs, String? groupBy, String? having, String? orderBy, int? limit, int? offset, int? bufferSize}) async {
+    final rows = await query(table, distinct: distinct, columns: columns, where: where, whereArgs: whereArgs, groupBy: groupBy, having: having, orderBy: orderBy, limit: limit, offset: offset);
+    return _WebQueryCursor(rows);
+  }
+
+  @override
+  Future<QueryCursor> rawQueryCursor(String sql, List<Object?>? arguments, {int? bufferSize}) async {
+    return _WebQueryCursor([]);
+  }
+
+  @override
+  Future<void> execute(String sql, [List<Object?>? arguments]) async {}
+
+  @override
+  Future<int> getVersion() async => 2;
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  String get path => ':memory:';
+
+  @override
+  bool get isOpen => true;
+
+  @override
+  Database get database => this;
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _WebQueryCursor implements QueryCursor {
+  final List<Map<String, dynamic>> _rows;
+  int _index = -1;
+
+  _WebQueryCursor(this._rows);
+
+  @override
+  Future<bool> moveNext() async => ++_index < _rows.length;
+
+  @override
+  Map<String, dynamic> get current => _rows[_index];
+
+  @override
+  Future<bool> movePrevious() async => --_index >= 0;
+
+  @override
+  Future<bool> moveTo(int index) async {
+    _index = index;
+    return _index >= 0 && _index < _rows.length;
+  }
+
+  @override
+  Future<bool> moveToFirst() async {
+    _index = _rows.isEmpty ? -1 : 0;
+    return _index == 0;
+  }
+
+  @override
+  Future<bool> moveToLast() async {
+    _index = _rows.length - 1;
+    return _index >= 0;
+  }
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  int get length => _rows.length;
 }

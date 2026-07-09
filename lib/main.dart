@@ -4,18 +4,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/theme/app_theme.dart';
+import 'services/log_service.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // 捕获 Flutter 框架渲染错误
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    debugPrint('=== Flutter Error ===\n${details.exceptionAsString()}');
-  };
-
-  // 捕获所有未处理的异步异常
   runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // Initialize log service (500-entry ring buffer)
+    LogService.instance.setCapacity(500);
+
+    // 捕获 Flutter 框架渲染错误
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      LogService.instance.log('app', 'error', 'flutter_error', {
+        'exception': details.exceptionAsString(),
+      });
+    };
+
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -28,7 +33,11 @@ void main() {
       ),
     );
   }, (error, stack) {
-    debugPrint('=== Zone Error ===\n$error\n$stack');
+    // 捕获所有未处理的异步异常
+    LogService.instance.log('app', 'error', 'zone_error', {
+      'error': error.toString(),
+      'stack': stack.toString(),
+    });
   });
 }
 

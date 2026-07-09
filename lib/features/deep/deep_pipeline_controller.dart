@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../../data/models/question.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/json_extractor.dart';
+import '../../services/log_service.dart';
 import '../../services/openai_service.dart';
 import '../../services/output_constraint.dart';
 import '../../core/providers/providers.dart';
@@ -11,6 +12,13 @@ import '../../data/models/schemas/deck_schema.dart';
 import 'tools/learning_goal.dart';
 import 'tools/web_search_tool.dart';
 import 'tools/fetch_url_tool.dart';
+
+/// Default batch size for Phase 2b question expansion.
+/// Reduced automatically on truncation.
+const _defaultBatchSize = 3;
+
+/// Minimum questions to accept as a partial result.
+const _minQuestionsForPartial = 3;
 
 /// 管线阶段
 enum PipelineStage {
@@ -115,6 +123,17 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
         return;
       }
 
+      // 检查研究阶段是否所有工具调用都失败
+      if (toolLoop.toolResults.isNotEmpty &&
+          toolLoop.toolResults.every((r) => r.startsWith('搜索失败') || r.startsWith('搜索服务错误') || r.startsWith('搜索无结果') || r.startsWith('搜索返回格式异常'))) {
+        state = state.copyWith(
+          stage: PipelineStage.failed,
+          error: '研究阶段失败：所有搜索请求均无有效结果，请检查网络或换一个主题',
+          statusText: '搜索失败',
+        );
+        return;
+      }
+
       // 3. Phase 1.5: 概念解析 — 将搜索结果结构化转写
       state = state.copyWith(stage: PipelineStage.searching, statusText: '正在整理搜索结果...');
 
@@ -123,24 +142,99 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
         structuredKnowledge = await _structureSearchResults(toolLoop.toolResults);
       }
 
-      // 4. Phase 2: 生成阶段 — 用结构化知识点 + 学习目标生成 deck
-      state = state.copyWith(stage: PipelineStage.generating, statusText: '正在生成题目...');
+      // Phase 2a: Generate question plan (small, bounded output)
+      state = state.copyWith(stage: PipelineStage.generating, statusText: '正在规划题目结构...');
 
-      final generationSystemPrompt = _buildGenerationSystemPrompt(goal);
-      final generationUserContent = _buildGenerationUserPrompt(
-        goal, structuredKnowledge, preFetchedContent.toString(),
-      );
-
-      final deckJson = await _openai.chatCompletion(
-        systemPrompt: generationSystemPrompt,
-        userContent: generationUserContent,
+      final planJson = await _openai.chatCompletion(
+        systemPrompt: _buildPlanSystemPrompt(goal),
+        userContent: _buildPlanUserPrompt(goal, structuredKnowledge, preFetchedContent.toString()),
         temperature: 0.7,
         outputConstraint: OutputConstraintLevel.level3Strict,
-        schema: deckJsonSchema,
-        maxTokens: 8192,
+        schema: questionPlanSchema,
+        maxTokens: 2048,
+        throwOnTruncation: false,
       );
 
-      final analysisResult = await _parseJson(deckJson);
+      final plan = _parsePlan(planJson);
+      if (plan.isEmpty) {
+        throw Exception('AI 未生成有效的题目规划');
+      }
+
+      LogService.instance.log('pipeline', 'info', 'plan_generated', {
+        'planSize': plan.length,
+        'goal': goal.purpose,
+      });
+
+      // Phase 2b: Expand plan into full questions (batch-by-batch, bounded)
+      final allQuestions = <Question>[];
+      final allConceptNames = <String>{};
+      final title = _deriveTitle(plan, goal);
+      var batchSize = _defaultBatchSize;
+      // Track retry count per batch position to prevent infinite loops
+      final retryCount = <int, int>{};
+
+      for (var i = 0; i < plan.length; i += batchSize) {
+        final end = (i + batchSize).clamp(0, plan.length);
+        final batch = plan.sublist(i, end);
+
+        state = state.copyWith(
+          stage: PipelineStage.generating,
+          statusText: '正在生成题目 ${i + 1}-$end / ${plan.length}...',
+        );
+
+        final success = await _expandBatch(
+          batch: batch,
+          goal: goal,
+          structuredKnowledge: structuredKnowledge,
+          preFetched: preFetchedContent.toString(),
+          batchSize: batchSize,
+          onQuestions: (questions, concepts) {
+            allQuestions.addAll(questions);
+            allConceptNames.addAll(concepts);
+          },
+        );
+
+        if (!success) {
+          final retries = retryCount[i] ?? 0;
+          if (batchSize > 1) {
+            // Truncation: reduce batch size and retry this batch
+            batchSize = batchSize - 1;
+            retryCount[i] = retries + 1;
+            LogService.instance.log('pipeline', 'warn', 'batch_truncated_reduce', {
+              'batchIndex': i,
+              'oldBatchSize': batchSize + 1,
+              'newBatchSize': batchSize,
+              'retry': retries + 1,
+            });
+            i -= batchSize;
+            continue;
+          } else if (retries < 2) {
+            // Batch size is 1, retry same position (model may have temporary issues)
+            retryCount[i] = retries + 1;
+            LogService.instance.log('pipeline', 'warn', 'batch_retry', {
+              'batchIndex': i,
+              'retry': retries + 1,
+            });
+            i -= batchSize;
+            continue;
+          }
+          // Already retried enough, skip this batch
+          LogService.instance.log('pipeline', 'error', 'batch_skip', {
+            'batchIndex': i,
+            'retries': retries,
+          });
+        }
+      }
+
+      if (allQuestions.length < _minQuestionsForPartial) {
+        throw Exception('仅生成 ${allQuestions.length} 道题，至少需要 $_minQuestionsForPartial 道');
+      }
+
+      final analysisResult = AnalysisResult(
+        title: title,
+        questions: allQuestions,
+        conceptNames: allConceptNames.toList(),
+      );
 
       state = state.copyWith(
         stage: PipelineStage.done,
@@ -307,6 +401,12 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
           );
           json = JsonExtractor.parse(fixed) ?? jsonDecode(fixed) as Map<String, dynamic>;
         } catch (_) {
+          // Log raw response for debugging parse failures
+          LogService.instance.log('parse', 'error', 'json_parse_failed', {
+            'rawLength': response.length,
+            'rawPreview': response.substring(0, response.length.clamp(0, 1000)),
+            'rawTail': response.length > 500 ? response.substring(response.length - 500) : '',
+          });
           throw Exception('无法解析 AI 返回的内容');
         }
       }
@@ -320,13 +420,230 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
         questions.add(Question.fromJson(q as Map<String, dynamic>, ''));
       } catch (_) {}
     }
-    if (questions.isEmpty) throw Exception('AI 未生成有效题目');
+    if (questions.isEmpty) {
+      LogService.instance.log('parse', 'error', 'no_valid_questions', {
+        'title': title,
+        'rawQuestionCount': questionsJson.length,
+        'rawJsonPreview': json.toString().substring(0, json.toString().length.clamp(0, 500)),
+      });
+      throw Exception('AI 未生成有效题目');
+    }
 
     return AnalysisResult(
       title: title,
       questions: questions,
       conceptNames: (json['concepts'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
     );
+  }
+
+  // ============ Phase 2a: Question Plan ============
+
+  String _buildPlanSystemPrompt(LearningGoal goal) {
+    final levelGuide = {
+      'beginner': '用户是初学者。出题策略：基础概念、记忆类题目为主 (60% knowledge, 40% skill)，题目直接明了。',
+      'advanced': '用户是高级学习者。出题策略：综合分析类题目为主 (20% knowledge, 80% skill)，增加跨概念综合题和开放性问题。',
+      'intermediate': '用户是中级学习者。出题策略：理解应用类题目为主 (40% knowledge, 60% skill)。',
+    }[goal.level] ?? '';
+
+    return '''你是一位专业的教育内容专家。根据提供的知识点和学习目标，规划一份题目结构清单。
+
+## 学习目标
+- 目的: ${goal.purpose}
+- 水平: ${goal.levelLabel}
+- 出题策略: $levelGuide
+
+## 输出格式（纯 JSON）:
+```json
+{
+  "plan": [
+    {
+      "type": "multiple_choice",
+      "difficulty": "medium",
+      "cognitiveLevel": "knowledge",
+      "concept": "知识点名称",
+      "briefContent": "一句话描述这道题考什么"
+    }
+  ]
+}
+```
+
+## 规则
+- 题目数量 5-8 道
+- 至少 2 种题型
+- briefContent 不超过 30 字
+- 所有文本使用中文''';
+  }
+
+  String _buildPlanUserPrompt(LearningGoal goal, String structuredKnowledge, String preFetched) {
+    final buf = StringBuffer();
+    buf.writeln('学习目的: ${goal.purpose}');
+    buf.writeln('水平: ${goal.levelLabel}');
+    buf.writeln();
+    if (structuredKnowledge.isNotEmpty) {
+      buf.writeln('## 结构化知识点（来自搜索）:');
+      buf.writeln(structuredKnowledge);
+      buf.writeln();
+    }
+    if (preFetched.isNotEmpty) {
+      buf.writeln('## 已有材料:');
+      buf.writeln(preFetched);
+      buf.writeln();
+    }
+    buf.writeln('请规划题目结构清单。');
+    return buf.toString();
+  }
+
+  List<Map<String, dynamic>> _parsePlan(String response) {
+    final json = JsonExtractor.parse(response);
+    if (json == null) {
+      LogService.instance.log('parse', 'error', 'plan_parse_failed', {
+        'rawLength': response.length,
+        'rawPreview': response.substring(0, response.length.clamp(0, 500)),
+      });
+      return [];
+    }
+    final plan = json['plan'] as List<dynamic>?;
+    if (plan == null || plan.isEmpty) return [];
+    return plan.whereType<Map<String, dynamic>>().toList();
+  }
+
+  String _deriveTitle(List<Map<String, dynamic>> plan, LearningGoal goal) {
+    // Use the first concept + goal purpose to derive a title
+    final firstConcept = plan.first['concept'] as String? ?? '';
+    if (firstConcept.isNotEmpty && goal.purpose.length <= 20) {
+      return '$firstConcept · ${goal.purpose}';
+    }
+    return goal.purpose;
+  }
+
+  // ============ Phase 2b: Batch Expansion ============
+
+  String _buildExpandSystemPrompt(LearningGoal goal) {
+    return '''你是一位专业的教育内容专家。根据提供的题目骨架和知识点，生成完整的题目。
+
+## 用户背景
+- 学习目的: ${goal.purpose}
+- 水平: ${goal.levelLabel}
+
+## 输出格式（纯 JSON）:
+```json
+{
+  "concepts": ["概念1", "概念2"],
+  "questions": [
+    {
+      "type": "multiple_choice",
+      "content": "题干",
+      "difficulty": "medium",
+      "cognitiveLevel": "knowledge",
+      "options": ["A", "B", "C", "D"],
+      "answer": "B",
+      "explanation": "解析"
+    }
+  ]
+}
+```
+
+## 规则
+- 每道题必须有 difficulty (easy/medium/hard) 和 cognitiveLevel (knowledge/skill)
+- explanation 不超过 2 句话
+- 所有文本使用中文''';
+  }
+
+  String _buildExpandUserPrompt({
+    required List<Map<String, dynamic>> batch,
+    required String structuredKnowledge,
+    required String preFetched,
+  }) {
+    final buf = StringBuffer();
+    buf.writeln('请将以下题目骨架展开为完整题目：');
+    buf.writeln();
+    buf.writeln('## 题目骨架:');
+    for (var i = 0; i < batch.length; i++) {
+      final stub = batch[i];
+      buf.writeln('${i + 1}. type=${stub['type']}, difficulty=${stub['difficulty']}, '
+          'cognitiveLevel=${stub['cognitiveLevel']}, concept=${stub['concept']}, '
+          'briefContent=${stub['briefContent']}');
+    }
+    buf.writeln();
+    if (structuredKnowledge.isNotEmpty) {
+      buf.writeln('## 结构化知识点（来自搜索）:');
+      buf.writeln(structuredKnowledge);
+      buf.writeln();
+    }
+    if (preFetched.isNotEmpty) {
+      buf.writeln('## 已有材料:');
+      buf.writeln(preFetched);
+      buf.writeln();
+    }
+    buf.writeln('请生成完整题目。');
+    return buf.toString();
+  }
+
+  /// Expands a batch of question stubs into full questions.
+  /// Returns true on success, false if output was truncated.
+  Future<bool> _expandBatch({
+    required List<Map<String, dynamic>> batch,
+    required LearningGoal goal,
+    required String structuredKnowledge,
+    required String preFetched,
+    required int batchSize,
+    required void Function(List<Question> questions, List<String> concepts) onQuestions,
+  }) async {
+    try {
+      final response = await _openai.chatCompletion(
+        systemPrompt: _buildExpandSystemPrompt(goal),
+        userContent: _buildExpandUserPrompt(
+          batch: batch,
+          structuredKnowledge: structuredKnowledge,
+          preFetched: preFetched,
+        ),
+        temperature: 0.7,
+        outputConstraint: OutputConstraintLevel.level3Strict,
+        schema: questionBatchSchema,
+        maxTokens: 4096,
+        throwOnTruncation: false,
+      );
+
+      // Check if truncated by looking for finish_reason in response
+      // Since we can't easily get finish_reason from the string response,
+      // we try to parse and check if we got fewer questions than expected
+      final json = JsonExtractor.parse(response);
+      if (json == null) {
+        LogService.instance.log('parse', 'error', 'batch_parse_failed', {
+          'batchSize': batchSize,
+          'rawLength': response.length,
+          'rawPreview': response.substring(0, response.length.clamp(0, 500)),
+        });
+        return false;
+      }
+
+      final questionsJson = json['questions'] as List<dynamic>? ?? [];
+      final concepts = (json['concepts'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final questions = <Question>[];
+      for (final q in questionsJson) {
+        try {
+          questions.add(Question.fromJson(q as Map<String, dynamic>, ''));
+        } catch (_) {}
+      }
+
+      // If we got fewer questions than the batch size, likely truncated
+      if (questions.length < batch.length && batchSize > 1) {
+        LogService.instance.log('pipeline', 'warn', 'batch_partial_truncated', {
+          'expected': batch.length,
+          'got': questions.length,
+        });
+        return false;
+      }
+
+      onQuestions(questions, concepts);
+      return true;
+    } catch (e) {
+      LogService.instance.log('pipeline', 'error', 'batch_expand_error', {
+        'error': e.toString(),
+        'batchSize': batchSize,
+      });
+      return false;
+    }
   }
 
   void cancel() {
