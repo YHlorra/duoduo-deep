@@ -11,6 +11,14 @@ const _apiModel = String.fromEnvironment('API_MODEL', defaultValue: 'gpt-4o-mini
 const _apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'https://api.openai.com/v1');
 
 void main() {
+  // Skip all stress tests if no API key is configured (e.g. in CI)
+  if (_apiKey.isEmpty) {
+    test('stress tests skipped (no API_KEY)', () {
+      expect(true, isTrue);
+    });
+    return;
+  }
+
   late OpenAIService openai;
   late ContentAnalyzer analyzer;
 
