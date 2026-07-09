@@ -3,10 +3,17 @@ import 'package:dlg_q/data/models/schemas/deck_schema.dart';
 
 void main() {
   group('Deck schemas', () {
-    test('all three schema constants are valid Maps', () {
+    test('all schema constants are valid Maps', () {
       expect(deckJsonSchema, isA<Map<String, dynamic>>());
       expect(socraticEvaluationSchema, isA<Map<String, dynamic>>());
       expect(fillBlankJudgeSchema, isA<Map<String, dynamic>>());
+      expect(searchResultsSchema, isA<Map<String, dynamic>>());
+    });
+
+    test('searchResultsSchema has correct required fields', () {
+      expect(searchResultsSchema['required'], equals(['concepts', 'summary']));
+      final conceptDef = (searchResultsSchema['\$defs']! as Map)['concept'] as Map;
+      expect(conceptDef['required'], equals(['name', 'description']));
     });
 
     test('deckJsonSchema has correct required fields', () {

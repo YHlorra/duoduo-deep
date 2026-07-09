@@ -203,6 +203,7 @@ class ContentAnalyzer {
       temperature: 0.7,
       outputConstraint: OutputConstraintLevel.level3Strict,
       schema: deckJsonSchema,
+      maxTokens: 8192,
     );
 
     return await _parseResponse(response);

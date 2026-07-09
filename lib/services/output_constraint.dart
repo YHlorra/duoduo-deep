@@ -29,6 +29,16 @@ class ProviderCapability {
     _forcedLevel = level;
   }
 
+  /// Invalidate the capability cache and any forced level.
+  ///
+  /// Call when the user switches provider, baseUrl, or model in Settings —
+  /// the old cached L3/L2 level no longer applies to the new provider.
+  static void invalidate() {
+    _forcedLevel = null;
+    _cache.clear();
+    _inFlight = null;
+  }
+
   /// Reset static state for testing. Does NOT affect production behavior.
   static void resetForTest() {
     _forcedLevel = null;

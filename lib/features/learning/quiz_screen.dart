@@ -188,24 +188,37 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final question = _questions[_currentIndex];
 
     setState(() => _socraticLoading = true);
-    final understood = await ref.read(socraticDialogServiceProvider).evaluateUnderstanding(
-      socraticHint: _socraticHint ?? '',
-      userResponse: userResponse,
-      originalQuestion: question.content,
-      correctAnswer: question.answer,
-    );
-    // 苏格拉底对话后更新掌握度
-    if (_deckConcepts.isNotEmpty) {
-      for (final concept in _deckConcepts) {
-        await ref.read(conceptMasteryProvider.notifier).recordAnswer(
-          concept, correct: understood, socraticUnderstood: understood);
+    try {
+      final understood = await ref.read(socraticDialogServiceProvider).evaluateUnderstanding(
+        socraticHint: _socraticHint ?? '',
+        userResponse: userResponse,
+        originalQuestion: question.content,
+        correctAnswer: question.answer,
+      );
+      // 苏格拉底对话后更新掌握度
+      if (_deckConcepts.isNotEmpty) {
+        for (final concept in _deckConcepts) {
+          await ref.read(conceptMasteryProvider.notifier).recordAnswer(
+            concept, correct: understood, socraticUnderstood: understood);
+        }
       }
-    }
-    if (mounted) {
-      setState(() {
-        _socraticLoading = false;
-        _understoodFromSocratic = understood;
-      });
+      if (mounted) {
+        setState(() {
+          _socraticLoading = false;
+          _understoodFromSocratic = understood;
+        });
+      }
+    } catch (e) {
+      // AI 评估失败 — 给用户明确反馈，不再静默返回 false。
+      if (mounted) {
+        setState(() => _socraticLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('AI 评估失败，请稍后重试'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
     }
   }
 

@@ -74,9 +74,11 @@ class SocraticDialogService {
       if (parsed != null) {
         return parsed['understood'] == true;
       }
-      return false;
-    } catch (_) {
-      return false;
+      // 解析失败不再静默返回 false — 抛异常让调用方给出 UX 反馈。
+      throw Exception('AI 理解评估返回内容无法解析');
+    } catch (e) {
+      // API 调用或解析失败 — 抛异常让调用方给出 UX 反馈。
+      throw Exception('AI 理解评估失败: $e');
     }
   }
 }

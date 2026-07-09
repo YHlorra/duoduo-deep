@@ -83,6 +83,41 @@ const socraticEvaluationSchema = <String, dynamic>{
   },
 };
 
+/// Schema for the concept-parsing / structuring intermediate step.
+///
+/// Phase 1.5 of the deep pipeline: raw search results → structured knowledge.
+/// Smaller output than a full deck, so max_tokens 4096 is sufficient here.
+const searchResultsSchema = <String, dynamic>{
+  'type': 'object',
+  'additionalProperties': false,
+  'required': ['concepts', 'summary'],
+  'properties': {
+    'concepts': {
+      'type': 'array',
+      'items': {'\$ref': '#/\$defs/concept'},
+      'minItems': 0,
+      'maxItems': 30,
+    },
+    'summary': {'type': 'string', 'minLength': 0, 'maxLength': 500},
+  },
+  '\$defs': {
+    'concept': {
+      'type': 'object',
+      'additionalProperties': false,
+      'required': ['name', 'description'],
+      'properties': {
+        'name': {'type': 'string', 'minLength': 1, 'maxLength': 100},
+        'description': {'type': 'string', 'minLength': 0, 'maxLength': 500},
+        'keyPoints': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'maxItems': 10,
+        },
+      },
+    },
+  },
+};
+
 const fillBlankJudgeSchema = <String, dynamic>{
   'type': 'object',
   'additionalProperties': false,

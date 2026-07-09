@@ -8,7 +8,14 @@ import 'output_constraint.dart';
 class JsonExtractor {
   JsonExtractor._();
 
+  static const _openSmartQuote = '\u201c';  // "
+  static const _closeSmartQuote = '\u201d'; // "
+
   /// Replace Chinese/smart quotes with ASCII double quotes.
+  ///
+  /// NOTE: This is a blind global replace. Prefer [extractFirstJsonObject]
+  /// which only normalizes smart quotes in structural (delimiter) position,
+  /// preserving smart quotes that are legitimate content inside string values.
   static String normalizeQuotes(String input) {
     return input
         .replaceAll('\u201c', '"')
@@ -17,45 +24,82 @@ class JsonExtractor {
 
   /// Find the first balanced JSON object in [input] using bracket depth counting.
   ///
-  /// Returns the substring from the first `{` to its matching `}` inclusive,
-  /// or `null` if no valid pair is found.
+  /// Smart-quote-aware: treats U+201C / U+201D as string delimiters when they
+  /// appear in structural position (outside a string), normalizing them to
+  /// ASCII `"` in the returned output. Smart quotes that appear *inside* an
+  /// ASCII-delimited string value are preserved as content (not normalized),
+  /// so legitimate content like `"他说"你好"了吗"` survives intact.
+  ///
+  /// Returns the normalized JSON object substring, or `null` if no valid
+  /// pair is found.
   static String? extractFirstJsonObject(String input) {
-    int? start;
     int depth = 0;
     bool inString = false;
     bool escaped = false;
+    // Which quote char opened the current string: '"' or _openSmartQuote.
+    String? stringQuote;
+    final buf = StringBuffer();
+    bool started = false;
 
     for (var i = 0; i < input.length; i++) {
       final char = input[i];
 
+      if (!started) {
+        // Scan for the first '{' — ignore everything before it.
+        if (char == '{') {
+          started = true;
+          depth = 1;
+          buf.write(char);
+        }
+        continue;
+      }
+
       if (escaped) {
+        buf.write(char);
         escaped = false;
         continue;
       }
 
       if (char == r'\' && inString) {
+        buf.write(char);
         escaped = true;
         continue;
       }
 
-      if (char == '"') {
-        inString = !inString;
-        continue;
-      }
-
-      if (inString) {
-        continue;
-      }
-
-      if (char == '{') {
-        if (depth == 0) {
-          start = i;
+      if (!inString) {
+        if (char == '"') {
+          inString = true;
+          stringQuote = '"';
+          buf.write(char);
+        } else if (char == _openSmartQuote) {
+          // Structural smart quote → normalize to ASCII.
+          inString = true;
+          stringQuote = _openSmartQuote;
+          buf.write('"');
+        } else if (char == '{') {
+          depth++;
+          buf.write(char);
+        } else if (char == '}') {
+          depth--;
+          buf.write(char);
+          if (depth == 0) return buf.toString();
+        } else {
+          buf.write(char);
         }
-        depth++;
-      } else if (char == '}') {
-        depth--;
-        if (depth == 0 && start != null) {
-          return input.substring(start, i + 1);
+      } else {
+        // Inside a string.
+        if (stringQuote == '"' && char == '"') {
+          inString = false;
+          stringQuote = null;
+          buf.write(char);
+        } else if (stringQuote == _openSmartQuote && char == _closeSmartQuote) {
+          // Closing structural smart quote → normalize to ASCII.
+          inString = false;
+          stringQuote = null;
+          buf.write('"');
+        } else {
+          // Content char — smart quotes inside an ASCII string are preserved.
+          buf.write(char);
         }
       }
     }
@@ -98,18 +142,16 @@ class JsonExtractor {
     );
   }
 
-  /// Combined parsing pipeline: normalize → strip fences → extract → decode.
+  /// Combined parsing pipeline: strip fences → extract (smart-quote-aware) → decode.
   ///
   /// Returns `null` if any step fails.
   static Map<String, dynamic>? parse(String input) {
-    var text = normalizeQuotes(input);
-    text = stripMarkdownFences(text);
+    var text = stripMarkdownFences(input);
     var extracted = extractFirstJsonObject(text);
 
     if (extracted == null) {
-      // Try without normalization in case it broke something.
-      text = stripMarkdownFences(input);
-      extracted = extractFirstJsonObject(text);
+      // Try on raw input in case fence stripping broke something.
+      extracted = extractFirstJsonObject(input);
     }
 
     if (extracted == null) return null;

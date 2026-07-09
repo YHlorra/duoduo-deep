@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dlg_q/services/json_extractor.dart';
 
@@ -48,6 +49,23 @@ void main() {
       test('handles escaped quotes inside strings', () {
         final input = '{"text":"say \\"hi\\""}';
         expect(JsonExtractor.extractFirstJsonObject(input), '{"text":"say \\"hi\\""}');
+      });
+
+      test('normalizes structural smart quotes to ASCII', () {
+        // Smart quotes used as JSON delimiters → normalized to "
+        final input = '{\u201ckey\u201d:\u201cvalue\u201d}';
+        expect(JsonExtractor.extractFirstJsonObject(input), '{"key":"value"}');
+      });
+
+      test('preserves smart quotes inside ASCII string values', () {
+        // Smart quotes are legitimate content inside a "..." string value.
+        // They must NOT be normalized (regression: normalizeQuotes broke this).
+        final input = '{"text":"\u8bf4\u4ed6\u201c\u4f60\u597d\u201d\u4e86\u5417"}';
+        final result = JsonExtractor.extractFirstJsonObject(input);
+        expect(result, isNotNull);
+        // The extracted JSON must decode successfully with smart quotes intact.
+        final decoded = jsonDecode(result!);
+        expect(decoded['text'], '说他\u201c你好\u201d了吗');
       });
     });
 

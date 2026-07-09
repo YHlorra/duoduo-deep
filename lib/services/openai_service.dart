@@ -6,13 +6,19 @@ import 'json_extractor.dart';
 import '../data/models/schemas/deck_schema.dart';
 
 /// Extracts the message content from an API response.
+/// Throws on truncation (finish_reason == "length").
 String _extractContent(Response response) {
   final data = response.data as Map<String, dynamic>;
   final choices = data['choices'] as List;
   if (choices.isEmpty) {
     throw Exception('API 返回空结果');
   }
-  return choices[0]['message']['content'] as String;
+  final choice = choices[0] as Map<String, dynamic>;
+  final finishReason = choice['finish_reason'] as String?;
+  if (finishReason == 'length') {
+    throw Exception('输出被截断(max_tokens 不足，请提高 max_tokens 或减少输出内容)');
+  }
+  return choice['message']['content'] as String;
 }
 
 /// AI 厂商预设
@@ -103,18 +109,24 @@ class AIProviders {
   }
 }
 
-/// 工具调用结果
-class ToolCallResult {
-  final String name;
-  final Map<String, dynamic> arguments;
-  ToolCallResult(this.name, this.arguments);
-}
+/// Result of a tool-calling loop (Phase 1: research).
+///
+/// [toolResults] contains the raw output of every tool execution (search
+/// results, fetched pages), in order. [finalContent] is the LLM's last text
+/// message (may be null if all rounds returned content=null). [toolsSupported]
+/// is false when the provider doesn't support tools and we fell back to a
+/// plain [chatCompletion] — in that case [finalContent] is already
+/// schema-constrained and [toolResults] is empty.
+class ToolLoopResult {
+  final String? finalContent;
+  final List<String> toolResults;
+  final bool toolsSupported;
 
-/// 带 tool call 的对话结果
-class ChatResult {
-  final String? content;
-  final List<ToolCallResult> toolCalls;
-  ChatResult({this.content, this.toolCalls = const []});
+  ToolLoopResult({
+    this.finalContent,
+    this.toolResults = const [],
+    this.toolsSupported = true,
+  });
 }
 
 /// AI 服务（兼容 OpenAI 接口格式）
@@ -200,6 +212,7 @@ class OpenAIService {
     double? temperature,
     OutputConstraintLevel? outputConstraint,
     Map<String, dynamic>? schema,
+    int maxTokens = 4096,
   }) async {
     final apiKey = await getApiKey();
     if (apiKey == null || apiKey.isEmpty) {
@@ -232,7 +245,7 @@ class OpenAIService {
       'model': model,
       'messages': messages,
       'temperature': temperature ?? 0.7,
-      'max_tokens': 4096,
+      'max_tokens': maxTokens,
     };
 
     if (outputConstraint == OutputConstraintLevel.level3Strict && schema != null) {
@@ -293,12 +306,19 @@ class OpenAIService {
     }
   }
 
-  /// 带 tool call 的对话（支持多轮工具调用）
+  /// 带 tool call 的对话（支持多轮工具调用）— Phase 1: 研究阶段
   ///
   /// 循环执行：调用 API → 解析 tool_calls → 执行工具 → 追加结果 → 再次调用
   /// 直到无 tool_calls 或达到 maxToolCalls 上限。
-  /// 若 API 返回工具不支持错误，自动降级到普通 chatCompletion。
-  Future<String> chatCompletionWithTools({
+  ///
+  /// 不再做 post-hoc reformat。返回 [ToolLoopResult]，包含所有工具执行结果
+  /// ([ToolLoopResult.toolResults]) 和 LLM 最终文本 ([ToolLoopResult.finalContent])。
+  /// 调用方负责将 toolResults 结构化后喂给下游生成调用。
+  ///
+  /// 若 API 返回工具不支持错误，自动降级到普通 chatCompletion（此时
+  /// [ToolLoopResult.toolsSupported] 为 false，[ToolLoopResult.finalContent]
+  /// 已是 schema 约束的输出）。
+  Future<ToolLoopResult> chatCompletionWithTools({
     required String systemPrompt,
     required String userContent,
     required List<Map<String, dynamic>> toolDefinitions,
@@ -322,6 +342,7 @@ class OpenAIService {
     ];
 
     String? finalContent = '';
+    final toolResults = <String>[];
 
     for (var round = 0; round <= maxToolCalls; round++) {
       try {
@@ -364,8 +385,12 @@ class OpenAIService {
         }
 
         if (toolCallsRaw == null || toolCallsRaw.isEmpty) {
-          // 无工具调用，返回最终内容
-          return _reformatWithConstraint(finalContent ?? '', outputConstraint, schema);
+          // 无工具调用，返回收集到的结果
+          return ToolLoopResult(
+            finalContent: finalContent,
+            toolResults: toolResults,
+            toolsSupported: true,
+          );
         }
 
         // 追加 assistant 消息（含 tool_calls）
@@ -387,6 +412,7 @@ class OpenAIService {
           }
 
           final result = await executeTool(name, args);
+          toolResults.add(result);
 
           messages.add({
             'role': 'tool',
@@ -399,43 +425,29 @@ class OpenAIService {
         // 若 API 不支持 tools 参数，降级到普通对话
         final errorMsg = e.response?.data?.toString() ?? e.message ?? '';
         if (errorMsg.contains('tools') || errorMsg.contains('tool')) {
-          return await chatCompletion(
+          final content = await chatCompletion(
             systemPrompt: systemPrompt,
             userContent: userContent,
             temperature: temperature,
             outputConstraint: outputConstraint,
             schema: schema,
           );
+          return ToolLoopResult(
+            finalContent: content,
+            toolResults: [],
+            toolsSupported: false,
+          );
         }
         rethrow;
       }
     }
 
-    return _reformatWithConstraint(finalContent ?? '', outputConstraint, schema);
-  }
-
-  /// Reformat content according to the output constraint level.
-  Future<String> _reformatWithConstraint(
-    String content,
-    OutputConstraintLevel? outputConstraint,
-    Map<String, dynamic>? schema,
-  ) async {
-    if (outputConstraint == OutputConstraintLevel.level3Strict && schema != null) {
-      return await chatCompletion(
-        systemPrompt: 'Reformat the following as valid JSON matching the schema. Output ONLY JSON, no explanation.',
-        userContent: content,
-        outputConstraint: outputConstraint,
-        schema: schema,
-      );
-    }
-    if (outputConstraint == OutputConstraintLevel.level2Json) {
-      return await chatCompletion(
-        systemPrompt: 'Reformat the following as valid JSON. Output ONLY JSON.',
-        userContent: content,
-        outputConstraint: outputConstraint,
-      );
-    }
-    return content;
+    // 达到 maxToolCalls 上限，返回已收集的结果
+    return ToolLoopResult(
+      finalContent: finalContent,
+      toolResults: toolResults,
+      toolsSupported: true,
+    );
   }
 
   /// AI 判断填空题答案是否正确
@@ -469,10 +481,11 @@ class OpenAIService {
       if (parsed != null) {
         return parsed['correct'] == true;
       }
-      return false;
+      // 解析失败不再静默返回 false — 抛异常让调用方决定降级策略。
+      throw Exception('AI 判题返回内容无法解析');
     } catch (e) {
-      // AI 判题失败时，回退到不通过
-      return false;
+      // API 调用或解析失败 — 抛异常让调用方决定降级策略。
+      throw Exception('AI 判题失败: $e');
     }
   }
 }

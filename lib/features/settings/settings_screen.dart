@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../services/openai_service.dart';
+import '../../services/output_constraint.dart';
 import '../../shared/widgets/duo_button.dart';
 import '../concept/concept_list_screen.dart';
 
@@ -93,6 +94,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ? _customModelController.text.trim()
         : _selectedModel;
     await openai.setModel(model);
+
+    // Invalidate cached provider capability — new provider/model may support
+    // a different structured-output level than the previous one.
+    ProviderCapability.invalidate();
 
     await ref.read(userStatsProvider.notifier).setDailyGoal(_dailyGoal);
     setState(() => _isSaving = false);
