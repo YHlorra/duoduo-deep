@@ -242,10 +242,20 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
         result: analysisResult,
       );
     } catch (e) {
+      final errorMsg = e.toString();
+      // 用户友好的错误提示
+      final userFriendlyError = errorMsg.contains('connection abort') ||
+              errorMsg.contains('Software caused connection abort') ||
+              errorMsg.contains('Connection refused') ||
+              errorMsg.contains('SocketException')
+          ? '网络连接中断，请检查网络后重试'
+          : errorMsg.contains('DioException')
+              ? '网络请求失败，请稍后重试'
+              : errorMsg;
       state = state.copyWith(
         stage: PipelineStage.failed,
-        error: e.toString(),
-        statusText: '失败: $e',
+        error: userFriendlyError,
+        statusText: '失败',
       );
     }
   }
