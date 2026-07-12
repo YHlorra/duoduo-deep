@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'log_service.dart';
@@ -31,6 +32,49 @@ import '../data/models/schemas/deck_schema.dart';
     final content = choice['message']['content'] as String;
     return (content: content, truncated: finishReason == 'length');
   }
+
+/// 判断是否为可重试的瞬时网络错误（无 response 或连接层错误）
+bool _isTransientDioError(DioException e) {
+  if (e.response != null) return false; // 有 HTTP 响应 → 非瞬时
+  return e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.sendTimeout ||
+      e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.connectionError ||
+      e.type == DioExceptionType.unknown;
+}
+
+/// 带指数退避的重试包装器。仅重试瞬时网络错误。
+Future<T> _retryWithBackoff<T>(
+  Future<T> Function() fn, {
+  int maxAttempts = 3,
+  String? operationName,
+}) async {
+  DioException? lastError;
+  for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } on DioException catch (e) {
+      if (!_isTransientDioError(e)) rethrow;
+      lastError = e;
+      if (attempt < maxAttempts) {
+        final delayMs = pow(2, attempt - 1).toInt() * 1000;
+        LogService.instance.log(
+          operationName ?? 'retry',
+          'warn',
+          'transient_error_retry',
+          {
+            'attempt': attempt,
+            'maxAttempts': maxAttempts,
+            'delayMs': delayMs,
+            'error': e.message ?? e.type.toString(),
+          },
+        );
+        await Future.delayed(Duration(milliseconds: delayMs));
+      }
+    }
+  }
+  throw lastError!;
+}
 
 /// AI 厂商预设
 class AIProviderPreset {
@@ -288,15 +332,18 @@ class OpenAIService {
     }
 
     try {
-      final response = await _dio.post(
-        '$baseUrl/chat/completions',
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-            'Content-Type': 'application/json',
-          },
+      final response = await _retryWithBackoff(
+        () => _dio.post(
+          '$baseUrl/chat/completions',
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+            },
+          ),
+          data: jsonEncode(body),
         ),
-        data: jsonEncode(body),
+        operationName: 'chatCompletion',
       );
 
       if (response.statusCode != 200) {
@@ -408,24 +455,27 @@ class OpenAIService {
 
     for (var round = 0; round <= maxToolCalls; round++) {
       try {
-        final response = await _dio.post(
-          '$baseUrl/chat/completions',
-          options: Options(
-            headers: {
-              'Authorization': 'Bearer $apiKey',
-              'Content-Type': 'application/json',
-            },
+        final response = await _retryWithBackoff(
+          () => _dio.post(
+            '$baseUrl/chat/completions',
+            options: Options(
+              headers: {
+                'Authorization': 'Bearer $apiKey',
+                'Content-Type': 'application/json',
+              },
+            ),
+            data: jsonEncode({
+              'model': model,
+              'messages': messages,
+              'temperature': temperature ?? 0.7,
+              'max_tokens': 4096,
+              'tools': toolDefinitions.map((t) => {
+                'type': 'function',
+                'function': t,
+              }).toList(),
+            }),
           ),
-          data: jsonEncode({
-            'model': model,
-            'messages': messages,
-            'temperature': temperature ?? 0.7,
-            'max_tokens': 4096,
-            'tools': toolDefinitions.map((t) => {
-              'type': 'function',
-              'function': t,
-            }).toList(),
-          }),
+          operationName: 'chatCompletionWithTools',
         );
 
         if (response.statusCode != 200) {
