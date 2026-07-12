@@ -7,6 +7,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../data/models/deck.dart';
 import '../../data/models/user_stats.dart';
+import '../../shared/widgets/heart_countdown.dart';
 import '../ingestion/ingestion_screen.dart';
 import '../learning/quiz_screen.dart';
 
@@ -121,10 +122,14 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(width: 12),
                   _StatChip(
-                    icon: stats.hearts <= 1 ? Icons.favorite : Icons.favorite,
+                    icon: Icons.favorite,
                     iconColor: heartColor,
                     value: '${stats.hearts}/${stats.maxHearts}',
                   ),
+                  if (stats.hearts < stats.maxHearts) ...[
+                    const SizedBox(width: 4),
+                    HeartCountdownText(lastHeartRefill: stats.lastHeartRefill),
+                  ],
                 ],
               );
             },

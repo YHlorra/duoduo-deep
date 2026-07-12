@@ -7,6 +7,7 @@ import '../features/home/home_screen.dart';
 import '../features/deck/deck_list_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/ingestion/ingestion_screen.dart';
+import '../services/heart_recovery.dart';
 
 class MainApp extends ConsumerStatefulWidget {
   const MainApp({super.key});
@@ -15,7 +16,7 @@ class MainApp extends ConsumerStatefulWidget {
   ConsumerState<MainApp> createState() => _MainAppState();
 }
 
-class _MainAppState extends ConsumerState<MainApp> {
+class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
   int _currentIndex = 0;
   StreamSubscription? _sharingSubscription;
 
@@ -28,8 +29,26 @@ class _MainAppState extends ConsumerState<MainApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 进 app 直接给前台分钟 timer；首批心数在 onResume 里也跑一次 apply。
+    ref.read(heartRecoveryProvider).startAutoRecovery();
     if (!kIsWeb) {
       _initSharingIntent();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final ctrl = ref.read(heartRecoveryProvider);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        ctrl.onResume();
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        ctrl.stopAutoRecovery();
     }
   }
 
@@ -81,6 +100,8 @@ class _MainAppState extends ConsumerState<MainApp> {
   @override
   void dispose() {
     _sharingSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    ref.read(heartRecoveryProvider).stopAutoRecovery();
     super.dispose();
   }
 

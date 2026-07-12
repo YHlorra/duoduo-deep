@@ -28,7 +28,7 @@ class DatabaseHelper {
     final path = join(dbPath, 'dlg_q.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -91,7 +91,8 @@ class DatabaseHelper {
         max_hearts INTEGER DEFAULT 5,
         last_study_date INTEGER NOT NULL,
         daily_goal INTEGER DEFAULT 50,
-        today_xp INTEGER DEFAULT 0
+        today_xp INTEGER DEFAULT 0,
+        last_heart_refill INTEGER NOT NULL
       )
     ''');
 
@@ -118,6 +119,7 @@ class DatabaseHelper {
       'last_study_date': DateTime.now().millisecondsSinceEpoch,
       'daily_goal': 50,
       'today_xp': 0,
+      'last_heart_refill': DateTime.now().millisecondsSinceEpoch,
     });
   }
 
@@ -138,6 +140,15 @@ class DatabaseHelper {
           updated_at INTEGER NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 3) {
+      // Heuristic: 1-per-minute heart refill. Column is NOT NULL, so existing
+      // rows must be filled explicitly — don't rely on fromMap defaults.
+      await db.execute('ALTER TABLE user_stats ADD COLUMN last_heart_refill INTEGER');
+      await db.rawUpdate(
+        'UPDATE user_stats SET last_heart_refill = ? WHERE last_heart_refill IS NULL',
+        [DateTime.now().millisecondsSinceEpoch],
+      );
     }
   }
 

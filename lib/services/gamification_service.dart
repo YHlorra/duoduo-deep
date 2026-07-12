@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/database/database_helper.dart';
@@ -102,14 +104,33 @@ class GamificationService {
   /// 检查心数是否为0
   bool isOutOfHearts(UserStats stats) => stats.hearts <= 0;
 
-  /// 恢复一颗心
-  Future<UserStats> refillOneHeart() async {
+  /// 自动恢复体力：按 lastHeartRefill 起算累计经过的整分钟数，一次补回来。
+  /// 满血后早退，避免无意义写入。
+  Future<UserStats> applyHeartRecovery({
+    DateTime Function()? clock,
+  }) async {
     var stats = await getStats();
-    if (stats.hearts < stats.maxHearts) {
-      stats = stats.copyWith(hearts: stats.hearts + 1);
-      await _db.updateUserStats(stats);
-    }
-    return stats;
+    final next = computeHeartRecovery(stats, clock: clock);
+    if (identical(next, stats)) return stats;
+    await _db.updateUserStats(next);
+    return next;
+  }
+
+  /// 纯函数版本：输入当前 stats 和可选注入时钟，返回应用恢复后的 stats。
+  /// 已满心、或者距上次恢复不足 1 分钟时，原对象原样返回（identical）。
+  static UserStats computeHeartRecovery(
+    UserStats stats, {
+    DateTime Function()? clock,
+  }) {
+    if (stats.hearts >= stats.maxHearts) return stats;
+    final now = (clock ?? DateTime.now)();
+    final elapsedMinutes = now.difference(stats.lastHeartRefill).inMinutes;
+    if (elapsedMinutes <= 0) return stats;
+    final newHearts = math.min(stats.hearts + elapsedMinutes, stats.maxHearts);
+    return stats.copyWith(
+      hearts: newHearts,
+      lastHeartRefill: stats.lastHeartRefill.add(Duration(minutes: elapsedMinutes)),
+    );
   }
 
   /// 设置每日目标

@@ -340,6 +340,15 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     }
 
     if (_outOfHearts) {
+      // 心数回到 ≥1 即关闭"心数用完"页；watch 必须在 build 直接执行，
+      // 普通 _build 方法里 watch 不会响应。
+      final recovered = ref.watch(userStatsProvider).value?.hearts ?? 0;
+      if (recovered > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _outOfHearts = false);
+        });
+        return const Scaffold(body: SizedBox.shrink());
+      }
       return _buildOutOfHeartsScreen();
     }
 
@@ -360,6 +369,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
               data: (s) => QuizProgressBar(
                 progress: (_currentIndex + 1) / _questions.length,
                 hearts: s.hearts,
+                maxHearts: s.maxHearts,
+                lastHeartRefill: s.lastHeartRefill,
               ),
               loading: () => const SizedBox(height: 40),
               error: (_, __) => const SizedBox(height: 40),
@@ -780,7 +791,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '完美完成一个单元可恢复1颗心',
+                        '心数每分钟自动恢复1颗',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,

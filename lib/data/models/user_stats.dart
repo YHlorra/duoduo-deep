@@ -7,6 +7,9 @@ class UserStats {
   final DateTime lastStudyDate;
   final int dailyGoal;
   final int todayXp;
+  // 上次体力自动恢复时刻（DB 列为 last_heart_refill）。空值兜底用 DateTime.now()
+  // 仅出现在 _onCreate 之前读取的极端情况（迁移已保证 NOT NULL 不会为 NULL）。
+  final DateTime lastHeartRefill;
 
   UserStats({
     this.xp = 0,
@@ -16,7 +19,8 @@ class UserStats {
     required this.lastStudyDate,
     this.dailyGoal = 50,
     this.todayXp = 0,
-  });
+    DateTime? lastHeartRefill,
+  }) : lastHeartRefill = lastHeartRefill ?? DateTime.now();
 
   UserStats copyWith({
     int? xp,
@@ -26,6 +30,7 @@ class UserStats {
     DateTime? lastStudyDate,
     int? dailyGoal,
     int? todayXp,
+    DateTime? lastHeartRefill,
   }) {
     return UserStats(
       xp: xp ?? this.xp,
@@ -35,6 +40,7 @@ class UserStats {
       lastStudyDate: lastStudyDate ?? this.lastStudyDate,
       dailyGoal: dailyGoal ?? this.dailyGoal,
       todayXp: todayXp ?? this.todayXp,
+      lastHeartRefill: lastHeartRefill ?? this.lastHeartRefill,
     );
   }
 
@@ -47,6 +53,7 @@ class UserStats {
       'last_study_date': lastStudyDate.millisecondsSinceEpoch,
       'daily_goal': dailyGoal,
       'today_xp': todayXp,
+      'last_heart_refill': lastHeartRefill.millisecondsSinceEpoch,
     };
   }
 
@@ -61,6 +68,9 @@ class UserStats {
       ),
       dailyGoal: (map['daily_goal'] as int?) ?? 50,
       todayXp: (map['today_xp'] as int?) ?? 0,
+      lastHeartRefill: DateTime.fromMillisecondsSinceEpoch(
+        (map['last_heart_refill'] as int?) ?? DateTime.now().millisecondsSinceEpoch,
+      ),
     );
   }
 

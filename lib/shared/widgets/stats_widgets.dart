@@ -1,86 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
-import '../../data/models/user_stats.dart';
-
-/// 顶部状态栏 - 显示连续天数、心数、XP
-class TopStatsBar extends StatelessWidget {
-  final UserStats stats;
-
-  const TopStatsBar({super.key, required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          // 连续打卡天数
-          _StatChip(
-            icon: Icons.local_fire_department,
-            iconColor: AppColors.streakOrange,
-            value: stats.streak.toString(),
-          ),
-          const SizedBox(width: 12),
-          // 宝石(XP)
-          _StatChip(
-            icon: Icons.diamond,
-            iconColor: AppColors.blue,
-            value: stats.xp.toString(),
-          ),
-          const SizedBox(width: 12),
-          // 心数
-          _StatChip(
-            icon: Icons.favorite,
-            iconColor: AppColors.heartRed,
-            value: '${stats.hearts}/${stats.maxHearts}',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String value;
-
-  const _StatChip({
-    required this.icon,
-    required this.iconColor,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: iconColor, size: 20),
-        const SizedBox(width: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
-}
+import 'heart_countdown.dart';
 
 /// 答题进度条
 class QuizProgressBar extends StatelessWidget {
   final double progress; // 0.0 - 1.0
   final int hearts;
+  final int maxHearts;
+  final DateTime lastHeartRefill;
 
   const QuizProgressBar({
     super.key,
     required this.progress,
     required this.hearts,
+    required this.maxHearts,
+    required this.lastHeartRefill,
   });
 
   @override
@@ -116,20 +50,11 @@ class QuizProgressBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // 心数
-          Row(
-            children: [
-              Icon(Icons.favorite, color: AppColors.heartRed, size: 22),
-              const SizedBox(width: 4),
-              Text(
-                hearts.toString(),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ],
+          // 心数 + 下一心倒计时
+          HeartsWithCountdown(
+            hearts: hearts,
+            maxHearts: maxHearts,
+            lastHeartRefill: lastHeartRefill,
           ),
         ],
       ),

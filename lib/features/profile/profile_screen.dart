@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../data/models/deck.dart';
 import '../../data/models/user_stats.dart';
+import '../../shared/widgets/heart_countdown.dart';
 import '../settings/settings_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -132,11 +133,25 @@ class ProfileScreen extends ConsumerWidget {
           label: '总 XP',
         ),
         const SizedBox(width: 12),
-        _StatCard(
-          icon: Icons.favorite,
-          color: AppColors.heartRed,
-          value: '${stats.hearts}/${stats.maxHearts}',
-          label: '心数',
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _StatCard(
+                icon: Icons.favorite,
+                color: AppColors.heartRed,
+                value: '${stats.hearts}/${stats.maxHearts}',
+                label: '心数',
+              ),
+              if (stats.hearts < stats.maxHearts)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: HeartCountdownText(
+                    lastHeartRefill: stats.lastHeartRefill,
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
