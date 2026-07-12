@@ -35,11 +35,12 @@ class _MultipleChoiceWidgetState extends State<MultipleChoiceWidget> {
   @override
   Widget build(BuildContext context) {
     final options = widget.question.options;
+    final resolved = widget.question.resolvedAnswer;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: options.map((option) {
         final isSelected = _selected == option;
-        final isCorrect = option == widget.question.answer;
+        final isCorrect = option == resolved;
         final showCorrect = widget.showResult && isCorrect;
         final showWrong = widget.showResult && isSelected && !isCorrect;
 
@@ -280,7 +281,7 @@ class _TrueFalseWidgetState extends State<TrueFalseWidget> {
     return Row(
       children: ['正确', '错误'].map((option) {
         final isSelected = _selected == option;
-        final isCorrect = option == widget.question.answer;
+        final isCorrect = option == widget.question.resolvedAnswer;
         final showCorrect = widget.showResult && isCorrect;
         final showWrong = widget.showResult && isSelected && !isCorrect;
 

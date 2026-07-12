@@ -6,6 +6,7 @@ import '../../core/providers/providers.dart';
 import '../../data/models/question.dart';
 import '../../data/models/question_type.dart';
 import '../../data/models/user_stats.dart';
+import '../../data/question_judge.dart';
 import '../../shared/widgets/duo_button.dart';
 import '../../shared/widgets/stats_widgets.dart';
 import 'widgets/question_widgets.dart';
@@ -80,7 +81,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final question = _questions[_currentIndex];
 
     // 先做本地判断
-    var isCorrect = _checkCorrect(question, _selectedAnswer!);
+    var isCorrect = isAnswerCorrect(question, _selectedAnswer!);
 
     // 填空题本地不匹配时，调用 AI 判断语义是否等价
     if (!isCorrect && question.type == QuestionType.fillBlank) {
@@ -145,22 +146,9 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     }
   }
 
-  bool _checkCorrect(Question question, String answer) {
-    switch (question.type) {
-      case QuestionType.multipleChoice:
-      case QuestionType.trueFalse:
-        return answer.trim() == question.answer.trim();
-      case QuestionType.fillBlank:
-        // 去除空格和标点，忽略大小写
-        return answer.trim().toLowerCase() == question.answer.trim().toLowerCase();
-      case QuestionType.matching:
-      case QuestionType.ordering:
-        // 对于匹配和排序，答案格式为 "item1-match1|item2-match2" 或 "step1|step2|step3"
-        // 比较时需要规范化
-        final normalize = (String s) => s.split('|').map((e) => e.trim()).join('|');
-        return normalize(answer) == normalize(question.answer);
-    }
-  }
+  // Local judge moved to lib/data/question_judge.dart (isAnswerCorrect) so
+  // BDD tests can exercise the exact same code the screen uses. ponytail:
+  // pure function, no widget deps, single source of truth for the check.
 
   // ============ 苏格拉底对话 ============
 

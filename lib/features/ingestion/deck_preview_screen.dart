@@ -220,7 +220,7 @@ class _QuestionPreviewCard extends StatelessWidget {
           if (question.options.isNotEmpty &&
               question.type != QuestionType.ordering) ...[
             ...question.options.map((option) {
-              final isAnswer = option == question.answer;
+              final isAnswer = option == question.resolvedAnswer;
               return Container(
                 margin: const EdgeInsets.only(bottom: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

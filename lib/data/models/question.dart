@@ -29,6 +29,28 @@ class Question {
     this.cognitiveLevel,
   });
 
+  /// Resolves [answer] to the matching option text when the LLM emitted a
+  /// letter index (A/B/C/...) instead of the full option string. Required
+  /// because the deck JSON schema declares `answer` as plain `string` with no
+  /// `enum` constraint over `options`, and the generator prompt's example
+  /// nudges the model toward letter-style output.
+  ///
+  /// Returns the raw [answer] unchanged for non multi-choice types and when
+  /// the value is already full text (or a letter outside the option range).
+  String get resolvedAnswer {
+    final raw = answer.trim();
+    if (raw.isEmpty) return answer;
+    final isMulti = type == QuestionType.multipleChoice ||
+        type == QuestionType.trueFalse;
+    if (!isMulti || options.isEmpty || raw.length != 1) return answer;
+    final upper = raw.toUpperCase();
+    final code = upper.codeUnitAt(0);
+    if (code < 65 || code > 90) return answer;
+    final idx = code - 65;
+    if (idx >= options.length) return answer;
+    return options[idx];
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
