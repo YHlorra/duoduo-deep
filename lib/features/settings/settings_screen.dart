@@ -423,6 +423,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  // === 学习辅助 ===
+                  const Text(
+                    '学习辅助',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border, width: 2),
+                    ),
+                    child: SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '苏格拉底式引导提问',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        '答错后通过提问引导你思考，会消耗额外 token',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      value: ref.watch(socraticEnabledProvider),
+                      activeColor: AppColors.green,
+                      onChanged: (v) =>
+                          ref.read(socraticEnabledProvider.notifier).setEnabled(v),
+                    ),
+                  ),
                    const SizedBox(height: 32),
 
                    // === 保存按钮 ===

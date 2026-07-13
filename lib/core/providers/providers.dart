@@ -300,6 +300,34 @@ class LearningModeNotifier extends StateNotifier<LearningMode> {
   }
 }
 
+// ============ 苏格拉底式引导提问开关 ============
+
+/// 苏格拉底式引导提问开关（默认关闭，opt-in，避免答错时强制消耗 token）
+final socraticEnabledProvider =
+    StateNotifierProvider<SocraticEnabledNotifier, bool>((ref) {
+  return SocraticEnabledNotifier();
+});
+
+class SocraticEnabledNotifier extends StateNotifier<bool> {
+  SocraticEnabledNotifier() : super(false) {
+    _load();
+  }
+
+  static const _key = 'socratic_enabled';
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 默认关闭：用户需在设置中显式开启才消耗 token
+    state = prefs.getBool(_key) ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
 // ============ 学习偏好设置 ============
 
 /// 学习偏好设置

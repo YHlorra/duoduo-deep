@@ -121,10 +121,11 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
       await ref.read(userStatsProvider.notifier).onWrong();
       // 记录答错次数
       _wrongAttempts[_currentIndex] = (_wrongAttempts[_currentIndex] ?? 0) + 1;
-      // 第一次答错：启动苏格拉底对话
-      if (_wrongAttempts[_currentIndex] == 1) {
+      // 第一次答错且开关开启：启动苏格拉底对话（关闭则不消耗 token，按原「首次答错不记录」语义）
+      final isFirstWrong = _wrongAttempts[_currentIndex] == 1;
+      if (isFirstWrong && ref.read(socraticEnabledProvider)) {
         _startSocratic(question);
-      } else {
+      } else if (!isFirstWrong) {
         // 第二次仍错：记录掌握度（答错）
         if (_deckConcepts.isNotEmpty) {
           await ref.read(conceptMasteryProvider.notifier).recordQuestionAnswer(_deckConcepts, correct: false);

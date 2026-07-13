@@ -37,7 +37,12 @@ class SocraticDialogService {
         userContent: userContent,
         temperature: 0.8,
       );
-      return result.trim();
+      // 剥离模型可能夹带的 <think>...</think> 推理内容（与 evaluateUnderstanding 路径一致）。
+      final cleaned = JsonExtractor.stripThinkingTags(result);
+      // 若模型只吐了思考块、清洗后为空，回退到兜底引导语。
+      return cleaned.isNotEmpty
+          ? cleaned
+          : '让我们换个角度想：这道题的关键概念是什么？';
     } catch (_) {
       return '让我们换个角度想：这道题的关键概念是什么？';
     }
