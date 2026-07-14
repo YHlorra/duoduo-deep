@@ -379,6 +379,18 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
               loading: () => const SizedBox(height: 40),
               error: (_, __) => const SizedBox(height: 40),
             ),
+            // 题号指示：第 X / Y 题
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                '第 ${_currentIndex + 1} / ${_questions.length} 题',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
             // 题目内容
             Expanded(
               child: SingleChildScrollView(
