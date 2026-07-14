@@ -406,7 +406,7 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _startRandomLevel(
       BuildContext context, WidgetRef ref, int level) async {
     final db = ref.read(databaseProvider);
-    final questions = await db.getSmartRandomQuestions(5);
+    final questions = await db.getSmartRandomQuestions(ref.read(questionsPerLevelProvider));
     if (questions.isEmpty) return;
     if (!context.mounted) return;
 

@@ -328,6 +328,37 @@ class SocraticEnabledNotifier extends StateNotifier<bool> {
   }
 }
 
+// ============ 随机模式每关题量 ============
+
+/// 随机模式每关抽题数量（默认 5，范围 5–20），持久化到 SharedPreferences。
+/// 用户在设置页调整，home_screen 随机关卡据此数量抽题。
+final questionsPerLevelProvider =
+    StateNotifierProvider<QuestionsPerLevelNotifier, int>((ref) {
+  return QuestionsPerLevelNotifier();
+});
+
+class QuestionsPerLevelNotifier extends StateNotifier<int> {
+  QuestionsPerLevelNotifier() : super(5) {
+    _load();
+  }
+
+  static const _key = 'questions_per_level';
+  static const min = 5;
+  static const max = 20;
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getInt(_key) ?? 5;
+    state = v.clamp(min, max);
+  }
+
+  Future<void> set(int v) async {
+    state = v.clamp(min, max);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, state);
+  }
+}
+
 // ============ 学习偏好设置 ============
 
 /// 学习偏好设置
