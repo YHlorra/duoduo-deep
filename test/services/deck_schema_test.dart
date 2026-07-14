@@ -16,7 +16,7 @@ void main() {
       expect(conceptDef['required'], equals(['name', 'description']));
     });
 
-    test('deckJsonSchema has correct required fields', () {
+    test('deckJsonSchema question required 不含 options（连线/排序题无需 options）', () {
       final questionRequired =
           (deckJsonSchema['\$defs']! as Map)['question'] as Map;
       expect(
@@ -26,7 +26,24 @@ void main() {
           'content',
           'difficulty',
           'cognitiveLevel',
-          'options',
+          'answer',
+          'explanation',
+        ]),
+      );
+      expect(questionRequired['required'].contains('options'), isFalse);
+    });
+
+    test('questionBatchSchema question required 同样不含 options', () {
+      final questionRequired =
+          (questionBatchSchema['\$defs']! as Map)['question'] as Map;
+      expect(questionRequired['required'].contains('options'), isFalse);
+      expect(
+        questionRequired['required'],
+        equals([
+          'type',
+          'content',
+          'difficulty',
+          'cognitiveLevel',
           'answer',
           'explanation',
         ]),

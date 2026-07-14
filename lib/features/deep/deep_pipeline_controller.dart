@@ -377,23 +377,42 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
 {
   "concepts": ["概念1", "概念2"],
   "title": "题包标题",
-  "questions": [
-    {
-      "type": "multiple_choice",
-      "content": "题干",
-      "difficulty": "medium",
-      "cognitiveLevel": "knowledge",
-      "options": ["A", "B", "C", "D"],
-      "answer": "B",
-      "explanation": "解析"
-    }
-  ]
+      "questions": [
+        {
+          "type": "multiple_choice",
+          "content": "题干",
+          "difficulty": "medium",
+          "cognitiveLevel": "knowledge",
+          "options": ["A", "B", "C", "D"],
+          "answer": "B",
+          "explanation": "解析"
+        },
+        {
+          "type": "matching",
+          "content": "将下列概念与对应解释连线",
+          "difficulty": "medium",
+          "cognitiveLevel": "skill",
+          "match_left": ["概念1", "概念2", "概念3"],
+          "match_right": ["解释A", "解释B", "解释C"],
+          "answer": "概念1-解释A|概念2-解释B|概念3-解释C",
+          "explanation": "解析"
+        },
+        {
+          "type": "ordering",
+          "content": "按正确顺序排列下列步骤",
+          "difficulty": "hard",
+          "cognitiveLevel": "skill",
+          "options": ["步骤C", "步骤A", "步骤B"],
+          "answer": "步骤A|步骤B|步骤C",
+          "explanation": "解析"
+        }
+      ]
 }
 ```
 
 ## 规则
 - 题目数量 5-10 道
-- 至少 2 种题型
+- 至少 2 种题型，且必须包含至少 1 道连线题(matching)或排序题(ordering)
 - 每道题必须有 difficulty (easy/medium/hard) 和 cognitiveLevel (knowledge/skill)
 - concepts 数组列出所有题目涉及的知识点
 - 所有文本使用中文''';
@@ -506,7 +525,7 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
 
 ## 规则
 - 题目数量 5-8 道
-- 至少 2 种题型
+- 至少 2 种题型，且必须包含至少 1 道连线题(matching)或排序题(ordering)
 - briefContent 不超过 30 字
 - 所有文本使用中文''';
   }
@@ -566,23 +585,43 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
 ```json
 {
   "concepts": ["概念1", "概念2"],
-  "questions": [
-    {
-      "type": "multiple_choice",
-      "content": "题干",
-      "difficulty": "medium",
-      "cognitiveLevel": "knowledge",
-      "options": ["A", "B", "C", "D"],
-      "answer": "B",
-      "explanation": "解析"
-    }
-  ]
+      "questions": [
+        {
+          "type": "multiple_choice",
+          "content": "题干",
+          "difficulty": "medium",
+          "cognitiveLevel": "knowledge",
+          "options": ["A", "B", "C", "D"],
+          "answer": "B",
+          "explanation": "解析"
+        },
+        {
+          "type": "matching",
+          "content": "将下列概念与对应解释连线",
+          "difficulty": "medium",
+          "cognitiveLevel": "skill",
+          "match_left": ["概念1", "概念2", "概念3"],
+          "match_right": ["解释A", "解释B", "解释C"],
+          "answer": "概念1-解释A|概念2-解释B|概念3-解释C",
+          "explanation": "解析"
+        },
+        {
+          "type": "ordering",
+          "content": "按正确顺序排列下列步骤",
+          "difficulty": "hard",
+          "cognitiveLevel": "skill",
+          "options": ["步骤C", "步骤A", "步骤B"],
+          "answer": "步骤A|步骤B|步骤C",
+          "explanation": "解析"
+        }
+      ]
 }
 ```
 
 ## 规则
 - 每道题必须有 difficulty (easy/medium/hard) 和 cognitiveLevel (knowledge/skill)
 - explanation 不超过 2 句话
+- 题型应多样化，建议包含连线题(matching)或排序题(ordering)
 - 所有文本使用中文''';
   }
 
