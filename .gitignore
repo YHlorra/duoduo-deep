@@ -81,6 +81,7 @@ Thumbs.db
 
 # ============ Private internal docs (exclude from open-source release) ============
 .workbuddy/
+.omc/
 AGENTS.md
 docs/enhanced-pipeline-design.md
 docs/investigation-format-exception-20260708.md

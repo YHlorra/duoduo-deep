@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import '../../data/database/database_helper.dart';
 import '../../data/models/question.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/json_extractor.dart';
@@ -268,7 +269,7 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
     final combined = rawResults.join('\n\n---\n\n');
 
     try {
-      return await _openai.chatCompletion(
+      final json = await _openai.chatCompletion(
         systemPrompt: '你是一位知识结构化助手。从以下搜索结果中提取核心知识点，'
             '输出 JSON：包含 concepts 数组（每个知识点有 name、description、keyPoints）'
             '和 summary（概述）。只输出 JSON，不要解释。',
@@ -277,9 +278,35 @@ class DeepPipelineController extends StateNotifier<PipelineState> {
         outputConstraint: OutputConstraintLevel.level3Strict,
         schema: searchResultsSchema,
       );
+      // ponytail: 顺手持久化概念定义到 concepts 表（DatabaseHelper 全局单例）。
+      // 解析失败不阻塞 — 主流程只依赖返回的字符串喂给 Phase 2 prompt。
+      _persistConceptDefinitions(json);
+      return json;
     } catch (e) {
       // 结构化失败时降级：直接返回原始搜索结果文本
       return combined;
+    }
+  }
+
+  /// 解析结构化 JSON 并写入 concepts 表。容错：任何异常静默跳过。
+  void _persistConceptDefinitions(String jsonStr) {
+    try {
+      final parsed = JsonExtractor.parse(jsonStr);
+      if (parsed == null) return;
+      final concepts = parsed['concepts'] as List<dynamic>? ?? [];
+      final db = DatabaseHelper();
+      for (final c in concepts) {
+        if (c is! Map<String, dynamic>) continue;
+        final name = (c['name'] as String?)?.trim();
+        if (name == null || name.isEmpty) continue;
+        final desc = c['description'] as String?;
+        final keyPoints = (c['keyPoints'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList();
+        db.upsertConcept(name, description: desc, keyPoints: keyPoints);
+      }
+    } catch (_) {
+      // 容错：持久化失败不影响主流程
     }
   }
 

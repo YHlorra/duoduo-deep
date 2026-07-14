@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -28,7 +29,7 @@ class DatabaseHelper {
     final path = join(dbPath, 'dlg_q.db');
     return await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -65,9 +66,14 @@ class DatabaseHelper {
         match_right TEXT,
         difficulty TEXT,
         cognitive_level TEXT,
+        last_shown_at INTEGER,
+        last_result TEXT,
         FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE
       )
     ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_questions_last_shown ON questions(last_shown_at)',
+    );
 
     // 学习记录表
     await db.execute('''
@@ -105,6 +111,18 @@ class DatabaseHelper {
         repetitions INTEGER DEFAULT 0,
         next_review_date INTEGER,
         last_result TEXT,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    // 概念定义表（跨题包共享，深度模式 Phase 1.5 写入）
+    await db.execute('''
+      CREATE TABLE concepts (
+        concept_name TEXT PRIMARY KEY,
+        description TEXT,
+        key_points TEXT,
+        source_deck_id TEXT,
+        created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     ''');
@@ -149,6 +167,27 @@ class DatabaseHelper {
         'UPDATE user_stats SET last_heart_refill = ? WHERE last_heart_refill IS NULL',
         [DateTime.now().millisecondsSinceEpoch],
       );
+    }
+    if (oldVersion < 4) {
+      // ponytail: 题目级冷却 — 概念层 SM-2 已存 concept_mastery 表，
+      // 题目层只加 last_shown_at/last_result 两列做短期去重，不重复造 SM-2。
+      await db.execute('ALTER TABLE questions ADD COLUMN last_shown_at INTEGER');
+      await db.execute('ALTER TABLE questions ADD COLUMN last_result TEXT');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_questions_last_shown ON questions(last_shown_at)',
+      );
+    }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS concepts (
+          concept_name TEXT PRIMARY KEY,
+          description TEXT,
+          key_points TEXT,
+          source_deck_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      ''');
     }
   }
 
@@ -230,6 +269,77 @@ class DatabaseHelper {
       [count],
     );
     return maps.map(Question.fromMap).toList();
+  }
+
+  /// 智能抽题：优先抽所属概念今日到期的题，其次未做过的，最后最久没做的。
+  /// 排除冷却期内（last_shown_at > now - cooldown）的题，避免短期重复。
+  /// ponytail: 题目无 concept 列，通过 deck_id → decks.concepts(逗号拼接)
+  /// 关联概念，所以应用层两步：先拿 due concepts 反查 due deck_ids，再一条
+  /// SQL 排序抽题。不是 N+1。
+  Future<List<Question>> getSmartRandomQuestions(
+    int count, {
+    Duration cooldown = const Duration(hours: 12),
+  }) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cooldownMs = now - cooldown.inMilliseconds;
+
+    // 1) due concepts → due deck_ids（decks.concepts 是逗号拼接，内存过滤）
+    final dueNames = await getDueConceptNames();
+    final Set<String> dueDeckIds = {};
+    if (dueNames.isNotEmpty) {
+      final dueSet = dueNames.toSet();
+      final decks = await db.query('decks', columns: ['id', 'concepts']);
+      for (final d in decks) {
+        final raw = d['concepts'] as String?;
+        if (raw == null || raw.isEmpty) continue;
+        final concepts = raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty);
+        if (concepts.any((c) => dueSet.contains(c))) {
+          dueDeckIds.add(d['id'] as String);
+        }
+      }
+    }
+
+    // 2) 单条 SQL 排序：due 优先 > 未做过 > 最久没做；排除冷却期内
+    final dueDeckList = dueDeckIds.isEmpty ? null : dueDeckIds.toList();
+    final args = <Object?>[];
+    String dueOrder = '1';
+    if (dueDeckList != null) {
+      final placeholders = List.filled(dueDeckList.length, '?').join(',');
+      dueOrder = 'CASE WHEN deck_id IN ($placeholders) THEN 0 ELSE 1 END';
+      args.addAll(dueDeckList);
+    }
+    args.add(cooldownMs);
+    args.add(count);
+
+    final maps = await db.rawQuery(
+      '''
+      SELECT * FROM questions
+      WHERE last_shown_at IS NULL OR last_shown_at <= ?
+      ORDER BY
+        $dueOrder,
+        CASE WHEN last_shown_at IS NULL THEN 0 ELSE 1 END,
+        last_shown_at ASC,
+        RANDOM()
+      LIMIT ?
+      ''',
+      args,
+    );
+    return maps.map(Question.fromMap).toList();
+  }
+
+  /// 记录题目展示与判题结果（用于冷却去重）
+  Future<void> recordQuestionShown(String questionId, {required bool correct}) async {
+    final db = await database;
+    await db.update(
+      'questions',
+      {
+        'last_shown_at': DateTime.now().millisecondsSinceEpoch,
+        'last_result': correct ? 'correct' : 'wrong',
+      },
+      where: 'id = ?',
+      whereArgs: [questionId],
+    );
   }
 
   // ============ StudyRecord 操作 ============
@@ -328,6 +438,48 @@ class DatabaseHelper {
   Future<void> deleteConceptMastery(String conceptName) async {
     final db = await database;
     await db.delete('concept_mastery', where: 'concept_name = ?', whereArgs: [conceptName]);
+  }
+
+  // ============ Concept 定义 ============
+
+  /// 获取概念定义（含 description / keyPoints）
+  Future<Map<String, dynamic>?> getConcept(String conceptName) async {
+    final db = await database;
+    final maps = await db.query(
+      'concepts',
+      where: 'concept_name = ?',
+      whereArgs: [conceptName],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    final m = maps.first;
+    return {
+      'concept_name': m['concept_name'] as String,
+      'description': m['description'] as String?,
+      'key_points': m['key_points'] != null
+          ? (jsonDecode(m['key_points'] as String) as List<dynamic>).cast<String>()
+          : <String>[],
+      'source_deck_id': m['source_deck_id'] as String?,
+    };
+  }
+
+  /// 写入/更新概念定义（深度模式 Phase 1.5 或 AI 懒生成调用）
+  Future<void> upsertConcept(
+    String conceptName, {
+    String? description,
+    List<String>? keyPoints,
+    String? sourceDeckId,
+  }) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.insert('concepts', {
+      'concept_name': conceptName,
+      'description': description,
+      'key_points': keyPoints != null ? jsonEncode(keyPoints) : null,
+      'source_deck_id': sourceDeckId,
+      'created_at': now,
+      'updated_at': now,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }
 

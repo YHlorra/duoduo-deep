@@ -108,6 +108,9 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final gameService = ref.read(gamificationServiceProvider);
     await gameService.recordCheckIn();
 
+    // 题目级冷却：无论对错都记 last_shown_at，避免短期重复出题
+    await ref.read(databaseProvider).recordQuestionShown(question.id, correct: isCorrect);
+
     if (isCorrect) {
       _correctCount++;
       _xpGained += 10;

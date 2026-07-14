@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/providers/providers.dart';
 import '../../services/sm2_algorithm.dart';
+import 'concept_detail_screen.dart';
+import '../learning/quiz_screen.dart';
 
 /// 概念掌握度列表页
 
@@ -71,23 +73,55 @@ class ConceptListScreen extends ConsumerWidget {
                   _statCard('待复习', due.length, AppColors.red),
                 ],
               ),
+              // 7 日到期预报
+              if (concepts.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _forecastBar(concepts),
+              ],
               const SizedBox(height: 24),
               // 今日到期
               if (due.isNotEmpty) ...[
-                _sectionTitle('今日应复习'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _sectionTitle('今日应复习'),
+                    TextButton.icon(
+                      onPressed: () => _startReview(context, ref),
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label: const Text('开始复习'),
+                      style: TextButton.styleFrom(foregroundColor: AppColors.green),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                ...due.map((c) => _conceptCard(c, highlight: true)),
+                ...due.map((c) => _conceptCard(c, highlight: true, onTap: () => _openDetail(context, c))),
                 const SizedBox(height: 16),
               ],
               // 全部概念
               _sectionTitle('全部概念 (${concepts.length})'),
               const SizedBox(height: 8),
-              ...concepts.map((c) => _conceptCard(c)),
+              ...concepts.map((c) => _conceptCard(c, onTap: () => _openDetail(context, c))),
             ],
           );
         },
       ),
     );
+  }
+
+  void _openDetail(BuildContext context, ConceptMasteryInfo info) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ConceptDetailScreen(info: info)),
+    );
+  }
+
+  Future<void> _startReview(BuildContext context, WidgetRef ref) async {
+    final db = ref.read(databaseProvider);
+    final questions = await db.getSmartRandomQuestions(5);
+    if (!context.mounted || questions.isEmpty) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => QuizScreen(questions: questions)),
+    );
+    ref.read(conceptMasteryProvider.notifier).refresh();
   }
 
   void _showHelpDialog(BuildContext context) {
@@ -219,21 +253,87 @@ class ConceptListScreen extends ConsumerWidget {
     );
   }
 
-  Widget _conceptCard(ConceptMasteryInfo info, {bool highlight = false}) {
+  /// 7 日到期预报条：柱状显示未来 7 天每天的到期概念数。
+  Widget _forecastBar(List<ConceptMasteryInfo> concepts) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final counts = List.filled(7, 0);
+    for (final c in concepts) {
+      if (c.nextReviewDate == null) continue;
+      final d = DateTime(c.nextReviewDate!.year, c.nextReviewDate!.month, c.nextReviewDate!.day);
+      final diff = d.difference(today).inDays;
+      if (diff >= 0 && diff < 7) counts[diff]++;
+    }
+    if (counts.every((c) => c == 0)) return const SizedBox.shrink();
+
+    final labels = ['今', '明', '后', '3天', '4天', '5天', '6天'];
+    final maxCount = counts.reduce((a, b) => a > b ? a : b).clamp(1, 10);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('未来 7 天复习量', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(7, (i) {
+              final count = counts[i];
+              final isToday = i == 0;
+              final barColor = count == 0
+                  ? AppColors.border
+                  : (isToday ? AppColors.red : AppColors.green);
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Column(
+                    children: [
+                      Text('$count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: count > 0 ? AppColors.textPrimary : AppColors.textLight)),
+                      const SizedBox(height: 4),
+                      // ponytail: 简单比例柱 — 高度按 count/maxCount 缩放，最小 4px 保证可见
+                      Container(
+                        height: 4 + (count / maxCount) * 28,
+                        decoration: BoxDecoration(
+                          color: barColor,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(labels[i], style: const TextStyle(fontSize: 10, color: AppColors.textLight)),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _conceptCard(ConceptMasteryInfo info, {bool highlight = false, VoidCallback? onTap}) {
     final color = [AppColors.red, AppColors.streakOrange, AppColors.green][info.statusColorIndex];
     final masteryText = {'mastered': '已掌握', 'learning': '学习中', 'unknown': '未评估'}[info.masteryLevel] ?? info.masteryLevel;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: highlight ? color.withOpacity(0.08) : AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: highlight ? color.withOpacity(0.3) : AppColors.border,
-          width: highlight ? 2 : 1,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: highlight ? color.withOpacity(0.08) : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: highlight ? color.withOpacity(0.3) : AppColors.border,
+            width: highlight ? 2 : 1,
+          ),
         ),
-      ),
       child: Row(
         children: [
           Container(
@@ -271,6 +371,7 @@ class ConceptListScreen extends ConsumerWidget {
               child: const Text('到期', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.red)),
             ),
         ],
+      ),
       ),
     );
   }

@@ -8,6 +8,7 @@ import '../../core/providers/providers.dart';
 import '../../data/models/deck.dart';
 import '../../data/models/user_stats.dart';
 import '../../shared/widgets/heart_countdown.dart';
+import '../concept/concept_list_screen.dart';
 import '../ingestion/ingestion_screen.dart';
 import '../learning/quiz_screen.dart';
 
@@ -27,6 +28,8 @@ class HomeScreen extends ConsumerWidget {
             _buildTopBar(context, ref, statsAsync, mode),
             // 每日目标进度条
             _buildDailyGoalBar(statsAsync),
+            // 今日概念复习提醒
+            _buildDueConceptBadge(context, ref),
             // 内容区
             Expanded(
               child: mode == LearningMode.random
@@ -183,6 +186,49 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  // 今日概念复习提醒徽章 — 有 due 概念时显示，点击跳概念页
+  Widget _buildDueConceptBadge(BuildContext context, WidgetRef ref) {
+    final conceptsAsync = ref.watch(conceptMasteryProvider);
+    return conceptsAsync.when(
+      data: (concepts) {
+        final dueCount = concepts.where((c) => c.isDue).length;
+        if (dueCount == 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: InkWell(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ConceptListScreen()),
+            ),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.red.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.red.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.psychology, color: AppColors.red, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '今日 $dueCount 个概念待复习',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.red),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.red, size: 18),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -360,7 +406,7 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _startRandomLevel(
       BuildContext context, WidgetRef ref, int level) async {
     final db = ref.read(databaseProvider);
-    final questions = await db.getRandomQuestions(5);
+    final questions = await db.getSmartRandomQuestions(5);
     if (questions.isEmpty) return;
     if (!context.mounted) return;
 
